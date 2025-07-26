@@ -35,12 +35,13 @@
             padding: 0.8rem 1.8rem;
             border-radius: 0.75rem; /* Rounded corners for buttons */
             font-weight: 600;
-            transition: background-color 0.2s ease-in-out, transform 0.1s ease-in-out;
+            transition: background-color 0.2s ease-in-out, transform 0.1s ease-in-out, box-shadow 0.2s ease-in-out;
             box-shadow: 0 4px 10px rgba(79, 70, 229, 0.3); /* Button shadow */
         }
         .btn-primary:hover {
             background-color: #4338ca; /* Darker indigo on hover */
             transform: translateY(-2px); /* Slight lift effect */
+            box-shadow: 0 6px 15px rgba(79, 70, 229, 0.4);
         }
         .btn-primary:active {
             transform: translateY(0);
@@ -52,40 +53,17 @@
             padding: 0.8rem 1.8rem;
             border-radius: 0.75rem;
             font-weight: 600;
-            transition: background-color 0.2s ease-in-out, transform 0.1s ease-in-out;
+            transition: background-color 0.2s ease-in-out, transform 0.1s ease-in-out, box-shadow 0.2s ease-in-out;
             box-shadow: 0 4px 10px rgba(107, 114, 128, 0.3);
         }
         .btn-secondary:hover {
             background-color: #4b5563; /* Darker gray on hover */
             transform: translateY(-2px);
+            box-shadow: 0 6px 15px rgba(107, 114, 128, 0.4);
         }
         .btn-secondary:active {
             transform: translateY(0);
             box-shadow: 0 2px 5px rgba(107, 114, 128, 0.3);
-        }
-        .token-card {
-            background-color: #e0e7ff; /* Light indigo background for tokens */
-            border: 1px solid #c7d2fe; /* Border for tokens */
-            border-radius: 0.75rem;
-            padding: 1rem;
-            margin: 0.5rem;
-            display: inline-flex; /* For wrapping */
-            align-items: center;
-            justify-content: center;
-            min-width: 80px; /* Minimum width for small tokens */
-            height: 60px; /* Fixed height for consistency */
-            font-weight: 600;
-            color: #4f46e5; /* Indigo text */
-            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05);
-            transition: transform 0.2s ease-in-out;
-        }
-        .token-card.folded {
-            background-color: #a5b4fc; /* Slightly darker indigo for folded state */
-            color: #ffffff;
-            font-size: 1.25rem; /* Larger font for '?' */
-        }
-        .token-card:hover {
-            transform: translateY(-3px);
         }
         .input-field {
             border: 1px solid #d1d5db; /* Light gray border */
@@ -158,12 +136,64 @@
         .copy-button:hover {
             background-color: #059669; /* Darker emerald */
         }
+        .player-indicator {
+            padding: 0.5rem 1rem;
+            border-radius: 0.75rem;
+            font-weight: 700;
+            color: #4f46e5;
+            background-color: #e0e7ff;
+            border: 2px solid transparent;
+            transition: all 0.3s ease-in-out;
+        }
+        .player-indicator.active {
+            border-color: #4f46e5;
+            background-color: #c7d2fe;
+            box-shadow: 0 4px 10px rgba(79, 70, 229, 0.2);
+        }
+        .token-pile {
+            background-color: #a5b4fc; /* Slightly darker indigo for folded state */
+            color: #ffffff;
+            font-size: 2.5rem; /* Larger font for count */
+            font-weight: 700;
+            width: 120px;
+            height: 120px;
+            border-radius: 1.5rem; /* More rounded */
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 2rem auto; /* Center the pile */
+            box-shadow: 0 8px 20px rgba(79, 70, 229, 0.3);
+            transition: all 0.3s ease-in-out;
+            cursor: pointer; /* Indicate it's clickable for Player 2 */
+        }
+        .token-pile:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 12px 25px rgba(79, 70, 229, 0.4);
+        }
+        .token-pile.empty {
+            background-color: #e2e8f0; /* Light gray when empty */
+            color: #94a3b8;
+            box-shadow: none;
+            cursor: default;
+        }
+        .game-over-message {
+            color: #ef4444; /* Red for game over */
+            font-size: 1.8rem;
+            font-weight: 700;
+            margin-top: 1.5rem;
+        }
     </style>
 </head>
 <body class="bg-gray-100 flex items-center justify-center min-h-screen p-5">
     <div class="container bg-white p-10 rounded-3xl shadow-xl flex flex-col items-center">
         <h1 class="text-4xl font-extrabold text-gray-800 mb-6">The Multiplayer Token Game</h1>
         <p id="userIdDisplay" class="text-sm text-gray-500 mb-4 break-all">Your User ID: <span id="currentUserId" class="font-mono">Loading...</span></p>
+
+        <!-- Player Indicators -->
+        <div class="flex justify-center gap-4 mb-6 w-full">
+            <div id="player1Indicator" class="player-indicator">Player 1</div>
+            <div id="player2Indicator" class="player-indicator">Player 2</div>
+        </div>
 
         <!-- Initial Phase: Create or Join Game -->
         <div id="initial-phase" class="w-full">
@@ -208,12 +238,20 @@
         <!-- Phase 3: Pick Token (Player 2 only) -->
         <div id="game-phase" class="w-full hidden">
             <p class="text-lg text-gray-600 mb-6" id="gamePhaseMessage">Player 2: Pick a token!</p>
+
+            <!-- Visual Token Pile -->
+            <div id="tokenPile" class="token-pile" title="Click to pick a token">
+                <span id="tokenCount">0</span>
+            </div>
+
             <button id="pickTokenBtn" class="btn-primary w-full mb-6">Pick a Token Randomly</button>
 
             <div id="revealedTokenContainer" class="message-box hidden">
                 <p class="text-xl font-bold mb-2">You got:</p>
                 <p id="revealedTokenContent" class="text-2xl text-indigo-700 font-extrabold break-words handwriting-font"></p>
             </div>
+
+            <p id="gameOverMessage" class="game-over-message hidden">Game Over! All tokens picked.</p>
 
             <button id="resetGameBtn" class="btn-secondary w-full mt-8">Reset Game</button>
         </div>
@@ -224,7 +262,6 @@
 
     <script type="module">
         // Firebase imports
-        // Updated Firebase SDK version to 12.0.0 as per user's snippet
         import { initializeApp } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-app.js";
         import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-auth.js";
         import { getFirestore, doc, setDoc, getDoc, updateDoc, onSnapshot, collection, query, where, addDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-firestore.js";
@@ -255,9 +292,13 @@
         let revealedToken = null;
         let numberOfTokensToGenerate = 0;
         let playerRole = null; // 'player1' or 'player2'
+        let player1Id = null; // Store player1's actual ID
+        let player2Id = null; // Store player2's actual ID
 
         // Get DOM elements
         const userIdDisplay = document.getElementById('currentUserId');
+        const player1Indicator = document.getElementById('player1Indicator');
+        const player2Indicator = document.getElementById('player2Indicator');
         const initialPhase = document.getElementById('initial-phase');
         const createGameBtn = document.getElementById('createGameBtn');
         const gameIdInput = document.getElementById('gameIdInput');
@@ -271,14 +312,16 @@
         const numTokensInput = document.getElementById('numTokensInput');
         const generateTokenFieldsBtn = document.getElementById('generateTokenFieldsBtn');
         const contentInputPhase = document.getElementById('content-input-phase');
-        // Corrected assignment for confirmTokensBtn
         const confirmTokensBtn = document.getElementById('confirmTokensBtn');
         const dynamicTokenInputs = document.getElementById('dynamicTokenInputs');
         const gamePhase = document.getElementById('game-phase');
         const gamePhaseMessage = document.getElementById('gamePhaseMessage');
+        const tokenPile = document.getElementById('tokenPile'); // New element for token pile
+        const tokenCountDisplay = document.getElementById('tokenCount'); // Span inside token pile
         const pickTokenBtn = document.getElementById('pickTokenBtn');
         const revealedTokenContainer = document.getElementById('revealedTokenContainer');
         const revealedTokenContent = document.getElementById('revealedTokenContent');
+        const gameOverMessage = document.getElementById('gameOverMessage'); // New element for game over
         const resetGameBtn = document.getElementById('resetGameBtn');
         const messageBox = document.getElementById('messageBox');
 
@@ -314,6 +357,26 @@
         }
 
         /**
+         * Updates the player indicators to show whose turn/role it is.
+         * @param {string} activePlayerRole - 'player1', 'player2', or null/undefined for no active player.
+         */
+        function updatePlayerIndicators(activePlayerRole) {
+            player1Indicator.classList.remove('active');
+            player2Indicator.classList.remove('active');
+
+            // Update display to show full User ID
+            player1Indicator.textContent = player1Id ? `Player 1 (${player1Id.substring(0, 4)}...)` : 'Player 1';
+            player2Indicator.textContent = player2Id ? `Player 2 (${player2Id.substring(0, 4)}...)` : 'Player 2';
+
+
+            if (activePlayerRole === 'player1') {
+                player1Indicator.classList.add('active');
+            } else if (activePlayerRole === 'player2') {
+                player2Indicator.classList.add('active');
+            }
+        }
+
+        /**
          * Initializes Firebase and authenticates the user.
          */
         async function initializeFirebase() {
@@ -345,11 +408,13 @@
                             joinGame(); // Attempt to auto-join
                         } else {
                             showPhase(initialPhase); // Show initial options if no gameId in URL
+                            updatePlayerIndicators(null); // No active player yet
                         }
                     } else {
                         userIdDisplay.textContent = 'Not Authenticated';
                         console.log("No user is signed in.");
                         showPhase(initialPhase); // Show initial options if no user
+                        updatePlayerIndicators(null); // No active player yet
                     }
                 });
             } catch (error) {
@@ -387,6 +452,7 @@
                 });
 
                 playerRole = 'player1';
+                player1Id = userId; // Set player1Id locally
                 const currentUrl = window.location.origin + window.location.pathname;
                 inviteLink.value = `${currentUrl}?gameId=${gameId}`;
                 inviteLinkContainer.classList.remove('hidden');
@@ -438,6 +504,8 @@
                     // Already part of this game
                     gameId = inputGameId;
                     playerRole = (gameData.player1Id === userId) ? 'player1' : 'player2';
+                    player1Id = gameData.player1Id;
+                    player2Id = gameData.player2Id; // Will be null if not yet joined
                     showMessage(`Rejoined game ${gameId} as ${playerRole}.`);
                     listenToGameChanges();
                     return;
@@ -458,6 +526,8 @@
 
                 gameId = inputGameId;
                 playerRole = 'player2';
+                player1Id = gameData.player1Id; // Get player1Id from existing game data
+                player2Id = userId; // Set player2Id locally
                 waitingMessage.textContent = `Joined game ${gameId}! Waiting for Player 1 to create tokens...`;
                 showMessage("Successfully joined game!");
 
@@ -488,6 +558,9 @@
             unsubscribeFromGame = onSnapshot(gameRef, (docSnap) => {
                 if (docSnap.exists()) {
                     const gameData = docSnap.data();
+                    // Update local player IDs from game data
+                    player1Id = gameData.player1Id;
+                    player2Id = gameData.player2Id;
                     console.log("Game state updated:", gameData);
                     updateUIBasedOnGameState(gameData);
                 } else {
@@ -508,8 +581,23 @@
             tokens = gameData.tokens || [];
             revealedToken = gameData.revealedToken;
 
+            // Update token pile display
+            tokenCountDisplay.textContent = tokens.length;
+            if (tokens.length === 0) {
+                tokenPile.classList.add('empty');
+                tokenPile.style.cursor = 'default';
+            } else {
+                tokenPile.classList.remove('empty');
+                tokenPile.style.cursor = 'pointer';
+            }
+
+            // Hide game over message by default, show only when game ends
+            gameOverMessage.classList.add('hidden');
+
             // Player 1's flow
             if (playerRole === 'player1') {
+                updatePlayerIndicators('player1'); // Player 1 is active
+
                 if (gameData.status === 'waiting_for_player2' && !gameData.player2Id) {
                     showPhase(waitingPhase);
                     waitingMessage.textContent = `Game created! Share this link with Player 2. Your Game ID: ${gameId}`;
@@ -517,42 +605,39 @@
                 } else if (gameData.status === 'ready_to_create_tokens' && gameData.player2Id) {
                     showPhase(numberInputPhase);
                     showMessage("Player 2 has joined! Please create your tokens.");
-                } else if (gameData.status === 'tokens_created') {
-                    // Player 1 sees the game is ready for picking
+                } else if (gameData.status === 'tokens_created' || gameData.status === 'token_picked') {
+                    // Player 1 sees the game is ready for picking by Player 2
                     showPhase(gamePhase);
-                    gamePhaseMessage.textContent = "Player 2 is ready to pick a token!";
+                    gamePhaseMessage.textContent = "Player 2's Turn: Pick a token!";
                     pickTokenBtn.classList.add('hidden'); // Player 1 doesn't pick
                     revealedTokenContainer.classList.toggle('hidden', !revealedToken);
                     revealedTokenContent.textContent = revealedToken || '';
-                } else if (gameData.status === 'token_picked') {
-                    showPhase(gamePhase);
-                    gamePhaseMessage.textContent = "Player 2 picked a token!";
-                    pickTokenBtn.classList.add('hidden');
-                    revealedTokenContainer.classList.remove('hidden');
-                    revealedTokenContent.textContent = revealedToken;
+
+                    if (tokens.length === 0) {
+                        gameOverMessage.classList.remove('hidden');
+                        gamePhaseMessage.textContent = "Game Over!";
+                    }
                 }
             }
             // Player 2's flow
             else if (playerRole === 'player2') {
+                updatePlayerIndicators('player2'); // Player 2 is active
+
                 if (gameData.status === 'waiting_for_player2' || gameData.status === 'ready_to_create_tokens') {
                     showPhase(waitingPhase);
                     waitingMessage.textContent = `Joined game ${gameId}! Waiting for Player 1 to create tokens...`;
                     inviteLinkContainer.classList.add('hidden'); // Player 2 doesn't need invite link
-                } else if (gameData.status === 'tokens_created') {
+                } else if (gameData.status === 'tokens_created' || gameData.status === 'token_picked') {
                     showPhase(gamePhase);
-                    gamePhaseMessage.textContent = "Player 1 has created tokens! Pick one!";
+                    gamePhaseMessage.textContent = "Your Turn: Pick a token!";
                     pickTokenBtn.classList.remove('hidden'); // Player 2 can pick
-                    revealedTokenContainer.classList.add('hidden'); // Hide previous reveal
-                    pickTokenBtn.disabled = false; // Enable pick button
-                } else if (gameData.status === 'token_picked') {
-                    showPhase(gamePhase);
-                    gamePhaseMessage.textContent = "You picked a token!";
-                    pickTokenBtn.classList.remove('hidden'); // Keep pick button for next pick
-                    revealedTokenContainer.classList.remove('hidden');
-                    revealedTokenContent.textContent = revealedToken;
-                    // If all tokens picked, disable pick button
+                    revealedTokenContainer.classList.toggle('hidden', !revealedToken);
+                    revealedTokenContent.textContent = revealedToken || '';
+
                     if (tokens.length === 0) {
                         pickTokenBtn.disabled = true;
+                        gameOverMessage.classList.remove('hidden');
+                        gamePhaseMessage.textContent = "Game Over!";
                         showMessage('All tokens picked! Reset to play again.', false);
                     } else {
                         pickTokenBtn.disabled = false; // Re-enable for next pick
@@ -626,6 +711,7 @@
                 await updateDoc(gameRef, {
                     tokens: tokens,
                     status: 'tokens_created',
+                    revealedToken: null, // Reset revealed token for new game
                     lastUpdated: serverTimestamp()
                 });
                 showMessage('Tokens confirmed and saved! Player 2 can now pick.');
@@ -668,7 +754,7 @@
                 await updateDoc(gameRef, {
                     tokens: updatedTokens, // Update remaining tokens
                     revealedToken: pickedTokenContent,
-                    status: 'token_picked',
+                    status: 'token_picked', // Keep status as token_picked for continuous picking
                     lastUpdated: serverTimestamp()
                 });
                 showMessage('Token picked!');
@@ -701,12 +787,15 @@
             revealedToken = null;
             numberOfTokensToGenerate = 0;
             playerRole = null;
+            player1Id = null;
+            player2Id = null;
             gameId = null;
             numTokensInput.value = 4; // Reset to default value
             dynamicTokenInputs.innerHTML = ''; // Clear dynamic fields
             revealedTokenContainer.classList.add('hidden');
             pickTokenBtn.disabled = false;
             gameIdInput.value = ''; // Clear game ID input
+            gameOverMessage.classList.add('hidden'); // Hide game over message
 
             // Clear URL parameters
             const url = new URL(window.location.href);
@@ -714,6 +803,7 @@
             window.history.replaceState({}, document.title, url.toString());
 
             showPhase(initialPhase);
+            updatePlayerIndicators(null); // Reset indicators
             showMessage('Game reset. You can now create or join a new game!');
         }
 
@@ -732,6 +822,15 @@
         generateTokenFieldsBtn.addEventListener('click', generateTokenInputFields);
         confirmTokensBtn.addEventListener('click', confirmTokensAndStartGame);
         pickTokenBtn.addEventListener('click', pickToken);
+        tokenPile.addEventListener('click', () => { // Allow clicking the pile to pick
+            if (playerRole === 'player2' && tokens.length > 0) {
+                pickToken();
+            } else if (playerRole === 'player2' && tokens.length === 0) {
+                showMessage('No tokens left to pick! Reset the game to play again.', true);
+            } else if (playerRole === 'player1') {
+                showMessage('You are Player 1. Player 2 picks the tokens.', false);
+            }
+        });
         resetGameBtn.addEventListener('click', resetGame);
         copyLinkBtn.addEventListener('click', copyInviteLink);
 
