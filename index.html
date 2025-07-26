@@ -488,8 +488,7 @@
             contentInputPhase.classList.add('hidden');
             gamePhase.classList.add('hidden');
             // Hide all game-specific buttons by default
-            playAgainBtn.classList.add('hidden');
-            resetGameBtn.classList.add('hidden');
+            // Removed individual hiding of playAgainBtn and resetGameBtn, relying on hostButtonsContainer
             leaveGameBtn.classList.add('hidden');
             hostButtonsContainer.classList.add('hidden'); // Hide host buttons container
             gameOverMessage.classList.add('hidden');
@@ -1201,7 +1200,7 @@
             try {
                 // Remove current user from the players array in Firestore
                 await updateDoc(doc(db, `artifacts/${appId}/public/data/games`, gameId), {
-                    players: arrayRemove({ id: userId, name: userName, isHost: false, color: players.find(p => p.id === userId).color, pickedTokenId: players.find(p => p.id === userId).pickedTokenId }),
+                    players: arrayRemove(players.find(p => p.id === userId)), // Remove the exact player object
                     lastUpdated: serverTimestamp()
                 });
                 showMessage("You have left the game.");
