@@ -209,7 +209,8 @@
 <body class="bg-gray-100 flex items-center justify-center min-h-screen p-5">
     <div class="container bg-white p-10 rounded-3xl shadow-xl flex flex-col items-center">
         <h1 class="text-4xl font-extrabold text-gray-800 mb-6">The Multiplayer Token Game</h1>
-        <p id="userIdDisplay" class="text-sm text-gray-500 mb-4 break-all">Your User ID: <span id="currentUserId" class="font-mono">Loading...</span></p>
+        <!-- User ID display, initially hidden -->
+        <p id="userIdDisplay" class="text-sm text-gray-500 mb-4 break-all hidden">Your User ID: <span id="currentUserId" class="font-mono">Loading...</span></p>
 
         <!-- Player Indicators -->
         <div class="flex justify-center gap-4 mb-6 w-full">
@@ -231,13 +232,7 @@
         <!-- Waiting Phase (for Player 1 after creating game, or Player 2 after joining) -->
         <div id="waiting-phase" class="w-full hidden">
             <p class="text-lg text-gray-600 mb-4" id="waitingMessage">Waiting for other player...</p>
-            <div id="inviteLinkContainer" class="mb-4 hidden">
-                <p class="text-md text-gray-700 mb-2">Share this link with Player 2:</p>
-                <div class="flex items-center justify-center">
-                    <input type="text" id="inviteLink" class="input-field flex-grow mr-2" readonly>
-                    <button id="copyLinkBtn" class="copy-button">Copy</button>
-                </div>
-            </div>
+            <!-- Invite link container is now removed, only Game ID will be shown -->
             <div class="loading-spinner"></div>
         </div>
 
@@ -273,7 +268,10 @@
 
             <p id="gameOverMessage" class="game-over-message hidden">Game Over! All tokens picked.</p>
 
-            <button id="resetGameBtn" class="btn-secondary w-full mt-8">Reset Game</button>
+            <!-- New "Play Again" button -->
+            <button id="playAgainBtn" class="btn-primary w-full mb-4 hidden">Play Again</button>
+            <!-- Original "Reset Game" button for full reset -->
+            <button id="resetGameBtn" class="btn-secondary w-full mt-4">Reset Game</button>
         </div>
 
         <!-- Message Box for Feedback -->
@@ -317,7 +315,8 @@
         let player2Id = null; // Store player2's actual ID
 
         // Get DOM elements
-        const userIdDisplay = document.getElementById('currentUserId');
+        const userIdDisplay = document.getElementById('userIdDisplay'); // Now refers to the container p tag
+        const currentUserIdSpan = document.getElementById('currentUserId'); // The span inside userIdDisplay
         const player1Indicator = document.getElementById('player1Indicator');
         const player2Indicator = document.getElementById('player2Indicator');
         const initialPhase = document.getElementById('initial-phase');
@@ -326,9 +325,7 @@
         const joinGameBtn = document.getElementById('joinGameBtn');
         const waitingPhase = document.getElementById('waiting-phase');
         const waitingMessage = document.getElementById('waitingMessage');
-        const inviteLinkContainer = document.getElementById('inviteLinkContainer');
-        const inviteLink = document.getElementById('inviteLink');
-        const copyLinkBtn = document.getElementById('copyLinkBtn');
+        // Removed inviteLinkContainer, inviteLink, copyLinkBtn as per request
         const numberInputPhase = document.getElementById('number-input-phase');
         const numTokensInput = document.getElementById('numTokensInput');
         const generateTokenFieldsBtn = document.getElementById('generateTokenFieldsBtn');
@@ -337,12 +334,13 @@
         const dynamicTokenInputs = document.getElementById('dynamicTokenInputs');
         const gamePhase = document.getElementById('game-phase');
         const gamePhaseMessage = document.getElementById('gamePhaseMessage');
-        const tokenDisplayArea = document.getElementById('tokenDisplayArea'); // New area for individual tokens
+        const tokenDisplayArea = document.getElementById('tokenDisplayArea');
         const pickTokenBtn = document.getElementById('pickTokenBtn'); // This button is now hidden, picking is by clicking cards
         const revealedTokenContainer = document.getElementById('revealedTokenContainer');
         const revealedTokenContent = document.getElementById('revealedTokenContent');
         const gameOverMessage = document.getElementById('gameOverMessage');
-        const resetGameBtn = document.getElementById('resetGameBtn');
+        const playAgainBtn = document.getElementById('playAgainBtn'); // New replay button
+        const resetGameBtn = document.getElementById('resetGameBtn'); // Original reset button
         const messageBox = document.getElementById('messageBox');
 
         /**
@@ -373,6 +371,9 @@
             numberInputPhase.classList.add('hidden');
             contentInputPhase.classList.add('hidden');
             gamePhase.classList.add('hidden');
+            playAgainBtn.classList.add('hidden'); // Hide replay button by default when changing phases
+            gameOverMessage.classList.add('hidden'); // Hide game over message by default
+            revealedTokenContainer.classList.add('hidden'); // Hide revealed token by default
             phaseToShow.classList.remove('hidden');
         }
 
@@ -384,6 +385,7 @@
             player1Indicator.classList.remove('active');
             player2Indicator.classList.remove('active');
 
+            // Show only first 4 chars of ID for brevity in UI, but keep full ID in console
             player1Indicator.textContent = player1Id ? `Player 1 (${player1Id.substring(0, 4)}...)` : 'Player 1';
             player2Indicator.textContent = player2Id ? `Player 2 (${player2Id.substring(0, 4)}...)` : 'Player 2';
 
@@ -415,7 +417,8 @@
                 onAuthStateChanged(auth, (user) => {
                     if (user) {
                         userId = user.uid;
-                        userIdDisplay.textContent = userId;
+                        currentUserIdSpan.textContent = userId; // Update the span
+                        // userIdDisplay.classList.remove('hidden'); // Keep hidden as per new request
                         console.log("Authenticated with user ID:", userId);
                         const urlParams = new URLSearchParams(window.location.search);
                         const urlGameId = urlParams.get('gameId');
@@ -427,7 +430,8 @@
                             updatePlayerIndicators(null);
                         }
                     } else {
-                        userIdDisplay.textContent = 'Not Authenticated';
+                        currentUserIdSpan.textContent = 'Not Authenticated';
+                        // userIdDisplay.classList.remove('hidden'); // Keep hidden as per new request
                         console.log("No user is signed in.");
                         showPhase(initialPhase);
                         updatePlayerIndicators(null);
@@ -451,7 +455,6 @@
             try {
                 showPhase(waitingPhase);
                 waitingMessage.textContent = "Creating game...";
-                inviteLinkContainer.classList.add('hidden');
 
                 const gamesCollectionRef = collection(db, `artifacts/${appId}/public/data/games`);
                 const newGameRef = doc(gamesCollectionRef);
@@ -469,10 +472,8 @@
 
                 playerRole = 'player1';
                 player1Id = userId;
-                const currentUrl = window.location.origin + window.location.pathname;
-                inviteLink.value = `${currentUrl}?gameId=${gameId}`;
-                inviteLinkContainer.classList.remove('hidden');
-                waitingMessage.textContent = `Game created! Share this link with Player 2. Your Game ID: ${gameId}`;
+                // Only show the Game ID, not the full link
+                waitingMessage.textContent = `Game created! Share this Game ID with Player 2: ${gameId}`;
                 showMessage("Game created successfully!");
 
                 listenToGameChanges();
@@ -502,7 +503,6 @@
             try {
                 showPhase(waitingPhase);
                 waitingMessage.textContent = "Joining game...";
-                inviteLinkContainer.classList.add('hidden');
 
                 const gameRef = doc(db, `artifacts/${appId}/public/data/games`, inputGameId);
                 const gameSnap = await getDoc(gameRef);
@@ -590,24 +590,23 @@
          */
         function updateUIBasedOnGameState(gameData) {
             tokens = gameData.tokens || [];
-            revealedToken = gameData.revealedToken; // This will be the content of the last picked token
+            revealedToken = gameData.revealedToken;
 
-            // Update player indicators based on current player IDs
             updatePlayerIndicators(playerRole);
 
-            // Hide game over message by default
             gameOverMessage.classList.add('hidden');
-            revealedTokenContainer.classList.add('hidden'); // Hide revealed token by default
+            revealedTokenContainer.classList.add('hidden');
+            playAgainBtn.classList.add('hidden'); // Hide by default
 
-            // Render individual token cards
             renderTokenCards(tokens);
+
+            const allTokensRevealed = tokens.length > 0 && tokens.every(token => token.revealed);
 
             // Player 1's flow
             if (playerRole === 'player1') {
                 if (gameData.status === 'waiting_for_player2' && !gameData.player2Id) {
                     showPhase(waitingPhase);
-                    waitingMessage.textContent = `Game created! Share this link with Player 2. Your Game ID: ${gameId}`;
-                    inviteLinkContainer.classList.remove('hidden');
+                    waitingMessage.textContent = `Game created! Share this Game ID with Player 2: ${gameId}`;
                 } else if (gameData.status === 'ready_to_create_tokens' && gameData.player2Id) {
                     showPhase(numberInputPhase);
                     showMessage("Player 2 has joined! Please create your tokens.");
@@ -616,10 +615,10 @@
                     gamePhaseMessage.textContent = "Player 2's Turn: Waiting for a pick...";
                     pickTokenBtn.classList.add('hidden'); // Player 1 doesn't pick
 
-                    const allTokensRevealed = tokens.every(token => token.revealed);
-                    if (allTokensRevealed && tokens.length > 0) {
+                    if (allTokensRevealed) {
                         gameOverMessage.classList.remove('hidden');
                         gamePhaseMessage.textContent = "Game Over!";
+                        playAgainBtn.classList.remove('hidden'); // Show replay button for Player 1
                     } else if (revealedToken) {
                         revealedTokenContainer.classList.remove('hidden');
                         revealedTokenContent.textContent = revealedToken;
@@ -631,16 +630,15 @@
                 if (gameData.status === 'waiting_for_player2' || gameData.status === 'ready_to_create_tokens') {
                     showPhase(waitingPhase);
                     waitingMessage.textContent = `Joined game ${gameId}! Waiting for Player 1 to create tokens...`;
-                    inviteLinkContainer.classList.add('hidden');
                 } else if (gameData.status === 'tokens_created' || gameData.status === 'token_picked') {
                     showPhase(gamePhase);
                     gamePhaseMessage.textContent = "Your Turn: Pick a token!";
                     pickTokenBtn.classList.add('hidden'); // Picking is by clicking cards
 
-                    const allTokensRevealed = tokens.every(token => token.revealed);
-                    if (allTokensRevealed && tokens.length > 0) {
+                    if (allTokensRevealed) {
                         gameOverMessage.classList.remove('hidden');
                         gamePhaseMessage.textContent = "Game Over! All tokens picked.";
+                        playAgainBtn.classList.remove('hidden'); // Show replay button for Player 2
                         showMessage('All tokens picked! Reset to play again.', false);
                     } else if (revealedToken) {
                         revealedTokenContainer.classList.remove('hidden');
@@ -686,6 +684,7 @@
                 }
 
                 // If a token was picked by someone else (Player 1 seeing Player 2's pick)
+                // This condition applies if the token is NOT revealed yet, but HAS been picked by another user.
                 if (token.pickedBy && token.pickedBy !== userId && !token.revealed) {
                     card.classList.add('picked'); // Style to show it was picked by other player
                     contentSpan.textContent = 'Picked!'; // Indicate it was picked
@@ -827,6 +826,7 @@
 
         /**
          * Resets the game to its initial state and clears Firestore data.
+         * This performs a full reset, returning to the initial create/join screen.
          */
         async function resetGame() {
             if (unsubscribeFromGame) {
@@ -835,7 +835,7 @@
 
             if (gameId && playerRole === 'player1') {
                 try {
-                    // Only Player 1 should delete the game document
+                    // Only Player 1 should clear the game document for a full reset
                     await setDoc(doc(db, `artifacts/${appId}/public/data/games`, gameId), {
                         player1Id: player1Id, // Keep player1Id for next game if they stay
                         player2Id: null,
@@ -861,6 +861,7 @@
             dynamicTokenInputs.innerHTML = '';
             revealedTokenContainer.classList.add('hidden');
             gameOverMessage.classList.add('hidden');
+            playAgainBtn.classList.add('hidden'); // Hide replay button
 
             // Clear URL parameters
             const url = new URL(window.location.href);
@@ -873,12 +874,44 @@
         }
 
         /**
+         * Starts a new round of the game with the same players.
+         * Only Player 1 can initiate this.
+         */
+        async function playAgain() {
+            if (!gameId) {
+                showMessage("No active game to replay.", true);
+                return;
+            }
+
+            if (playerRole === 'player1') {
+                try {
+                    // Reset game state in Firestore for the current game ID
+                    await updateDoc(doc(db, `artifacts/${appId}/public/data/games`, gameId), {
+                        tokens: [],
+                        revealedToken: null,
+                        status: 'ready_to_create_tokens', // Go back to token creation phase
+                        lastUpdated: serverTimestamp()
+                    });
+                    showMessage("Starting a new round! Player 2, wait for new tokens.");
+                    // UI will update via onSnapshot listener
+                } catch (error) {
+                    console.error("Error starting new round:", error);
+                    showMessage("Failed to start new round. Please try again.", true);
+                }
+            } else if (playerRole === 'player2') {
+                showMessage("Waiting for Player 1 to start a new round.", false);
+            }
+        }
+
+        /**
          * Copies the invite link to the clipboard.
          */
         function copyInviteLink() {
-            inviteLink.select();
-            document.execCommand('copy');
-            showMessage('Invite link copied to clipboard!');
+            // This function is now unused as we're not showing the full link,
+            // but keeping it for reference if needed.
+            // inviteLink.select();
+            // document.execCommand('copy');
+            // showMessage('Invite link copied to clipboard!');
         }
 
         // Event Listeners
@@ -886,9 +919,9 @@
         joinGameBtn.addEventListener('click', joinGame);
         generateTokenFieldsBtn.addEventListener('click', generateTokenInputFields);
         confirmTokensBtn.addEventListener('click', confirmTokensAndStartGame);
-        // pickTokenBtn is now hidden, picking is via clicking cards
+        playAgainBtn.addEventListener('click', playAgain); // New event listener for replay
         resetGameBtn.addEventListener('click', resetGame);
-        copyLinkBtn.addEventListener('click', copyInviteLink);
+        // copyLinkBtn.addEventListener('click', copyInviteLink); // No longer needed
 
         numTokensInput.addEventListener('keydown', (event) => {
             if (event.key === 'Enter') {
