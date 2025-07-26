@@ -149,6 +149,7 @@
             height: 100px; /* Fixed height for consistent cards */
             border-radius: 0.75rem;
             display: flex;
+            flex-direction: column; /* Allow content and name to stack */
             align-items: center;
             justify-content: center;
             margin: 0.5rem;
@@ -157,19 +158,19 @@
             cursor: pointer;
             flex-shrink: 0; /* Prevent shrinking in flex container */
             position: relative; /* For overlay */
+            padding-bottom: 0.5rem; /* Space for name */
         }
         .token-card-display:hover:not(.revealed):not(.picked) {
             transform: translateY(-5px);
             box-shadow: 0 8px 15px rgba(79, 70, 229, 0.3);
         }
+        /* Dynamic colors for revealed tokens */
         .token-card-display.revealed {
-            background-color: #d1fae5; /* Light green for revealed */
-            color: #065f46;
             cursor: default;
             box-shadow: 0 4px 10px rgba(52, 211, 153, 0.3);
-            border: 2px solid #34d399;
+            border: 2px solid; /* Border will be colored */
         }
-        .token-card-display.picked {
+        .token-card-display.picked { /* For tokens picked by others, but not yet revealed */
             background-color: #fca5a5; /* Light red for picked by other */
             color: #991b1b;
             cursor: default;
@@ -193,6 +194,16 @@
             padding: 0.5rem;
             word-break: break-all;
             text-align: center;
+            flex-grow: 1; /* Allow content to take available space */
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .picked-by-name {
+            font-size: 0.75rem; /* text-xs */
+            font-weight: 500;
+            margin-top: 0.25rem;
+            color: #4b5563; /* Darker gray for name */
         }
         /* Modal styles for player limit input */
         .modal-overlay {
@@ -216,6 +227,23 @@
             max-width: 400px;
             text-align: center;
         }
+        .leave-button {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            background-color: #f87171; /* Red-orange */
+            color: white;
+            padding: 0.6rem 1.2rem;
+            border-radius: 0.5rem;
+            font-weight: 600;
+            font-size: 0.875rem;
+            transition: background-color 0.2s ease-in-out, transform 0.1s ease-in-out;
+            box-shadow: 0 2px 5px rgba(248, 113, 113, 0.3);
+        }
+        .leave-button:hover {
+            background-color: #ef4444; /* Darker red-orange */
+            transform: translateY(-1px);
+        }
     </style>
 </head>
 <body class="bg-gray-100 flex items-center justify-center min-h-screen p-5">
@@ -224,7 +252,7 @@
         <!-- User ID display, initially hidden -->
         <p id="userIdDisplay" class="text-sm text-gray-500 mb-4 break-all hidden">Your User ID: <span id="currentUserId" class="font-mono">Loading...</span></p>
 
-        <!-- Dynamic Player List Display (replaces fixed Player 1/2 indicators) -->
+        <!-- Dynamic Player List Display -->
         <div id="connectedPlayersList" class="flex flex-wrap justify-center gap-2 mb-6 w-full">
             <!-- Player tags will be dynamically inserted here -->
         </div>
@@ -247,7 +275,7 @@
             <button id="joinGameBtn" class="btn-secondary w-full">Join Game</button>
         </div>
 
-        <!-- Waiting Phase (for Player 1 after creating game, or Player 2 after joining) -->
+        <!-- Waiting Phase -->
         <div id="waiting-phase" class="w-full hidden">
             <p class="text-lg text-gray-600 mb-4" id="waitingMessage">Waiting for other players...</p>
             <p id="gameIdDisplay" class="text-xl font-bold text-gray-800 mb-4 hidden">Game ID: <span id="currentShareGameId" class="font-mono"></span></p>
@@ -283,14 +311,16 @@
             <div id="revealedTokenContainer" class="message-box hidden">
                 <p class="text-xl font-bold mb-2">You got:</p>
                 <p id="revealedTokenContent" class="text-2xl text-indigo-700 font-extrabold break-words handwriting-font"></p>
+                <p id="revealedByPlayerName" class="text-sm text-gray-600 mt-2"></p>
             </div>
 
             <p id="gameOverMessage" class="game-over-message hidden">Game Over! All tokens picked.</p>
 
-            <!-- New "Play Again" button -->
-            <button id="playAgainBtn" class="btn-primary w-full mb-4 hidden">Play Again</button>
-            <!-- Original "Reset Game" button for full reset -->
-            <button id="resetGameBtn" class="btn-secondary w-full mt-4">Reset Game</button>
+            <!-- Host-only buttons -->
+            <div id="hostButtons" class="w-full hidden">
+                <button id="playAgainBtn" class="btn-primary w-full mb-4">Play Again</button>
+                <button id="resetGameBtn" class="btn-secondary w-full mt-4">Reset Game</button>
+            </div>
         </div>
 
         <!-- Message Box for Feedback -->
@@ -307,9 +337,23 @@
         </div>
     </div>
 
+    <!-- Modal for Leave Game Confirmation -->
+    <div id="leaveGameConfirmModal" class="modal-overlay hidden">
+        <div class="modal-content">
+            <h2 class="text-2xl font-bold mb-4">Confirm Leave Game</h2>
+            <p class="text-md text-gray-700 mb-4">Are you sure you want to leave this game?</p>
+            <div class="flex justify-center gap-4">
+                <button id="confirmLeaveBtn" class="btn-primary">Yes, Leave</button>
+                <button id="cancelLeaveBtn" class="btn-secondary">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Leave Game Button (for Guests) -->
+    <button id="leaveGameBtn" class="leave-button hidden">Leave Game</button>
+
     <script type="module">
         // Firebase imports
-        // Corrected import for 'collection' from 'firebase/firestore'
         import { initializeApp } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-app.js";
         import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-auth.js";
         import { getFirestore, doc, setDoc, getDoc, updateDoc, onSnapshot, collection, arrayUnion, arrayRemove, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-firestore.js";
@@ -340,12 +384,27 @@
         // Tokens: { id: string, content: string, revealed: boolean, pickedBy: string|null }
         let tokens = [];
         let revealedToken = null; // Content of the last revealed token
+        let revealedByPlayerName = null; // Name of the player who revealed the token
         let numberOfTokensToGenerate = 0;
         // playerRole will be 'host' or 'guest'
         let playerRole = null;
-        // Players: [{id: userId, name: userName, isHost: boolean}, ...]
+        // Players: [{id: userId, name: userName, isHost: boolean, color: string, pickedTokenId: string|null}, ...]
         let players = [];
         let maxPlayers = 2; // Default max players
+
+        // Color palette for players' picked tokens
+        const playerColors = [
+            '#4f46e5', // Indigo
+            '#10b981', // Emerald
+            '#f97316', // Orange
+            '#ef4444', // Red
+            '#8b5cf6', // Violet
+            '#ec4899', // Pink
+            '#06b6d4', // Cyan
+            '#eab308', // Yellow
+            '#65a30d', // Lime
+            '#a855f7'  // Purple
+        ];
 
         // Get DOM elements
         const usernameInputPhase = document.getElementById('username-input-phase');
@@ -376,18 +435,28 @@
         const gamePhase = document.getElementById('game-phase');
         const gamePhaseMessage = document.getElementById('gamePhaseMessage');
         const tokenDisplayArea = document.getElementById('tokenDisplayArea');
-        const pickTokenBtn = document.getElementById('pickTokenBtn');
+        const pickTokenBtn = document.getElementById('pickTokenBtn'); // This button is now hidden
         const revealedTokenContainer = document.getElementById('revealedTokenContainer');
         const revealedTokenContent = document.getElementById('revealedTokenContent');
+        const revealedByPlayerNameElement = document.getElementById('revealedByPlayerName'); // New element for player name
         const gameOverMessage = document.getElementById('gameOverMessage');
         const playAgainBtn = document.getElementById('playAgainBtn');
         const resetGameBtn = document.getElementById('resetGameBtn');
+        const hostButtonsContainer = document.getElementById('hostButtons'); // Container for host-only buttons
+
         const messageBox = document.getElementById('messageBox');
 
         // Modal elements
         const playerLimitModal = document.getElementById('playerLimitModal');
         const maxPlayersInput = document.getElementById('maxPlayersInput');
         const confirmPlayerLimitBtn = document.getElementById('confirmPlayerLimitBtn');
+
+        // Leave Game Modal elements
+        const leaveGameBtn = document.getElementById('leaveGameBtn'); // Button for guests
+        const leaveGameConfirmModal = document.getElementById('leaveGameConfirmModal');
+        const confirmLeaveBtn = document.getElementById('confirmLeaveBtn');
+        const cancelLeaveBtn = document.getElementById('cancelLeaveBtn');
+
 
         /**
          * Displays a message in the message box.
@@ -418,12 +487,18 @@
             numberInputPhase.classList.add('hidden');
             contentInputPhase.classList.add('hidden');
             gamePhase.classList.add('hidden');
+            // Hide all game-specific buttons by default
             playAgainBtn.classList.add('hidden');
+            resetGameBtn.classList.add('hidden');
+            leaveGameBtn.classList.add('hidden');
+            hostButtonsContainer.classList.add('hidden'); // Hide host buttons container
             gameOverMessage.classList.add('hidden');
             revealedTokenContainer.classList.add('hidden');
-            gameIdDisplay.classList.add('hidden'); // Hide game ID display by default
-            shareGameIdBtn.classList.add('hidden'); // Hide share button by default
-            playerLimitModal.classList.add('hidden'); // Hide modal by default
+            gameIdDisplay.classList.add('hidden');
+            shareGameIdBtn.classList.add('hidden');
+            playerLimitModal.classList.add('hidden');
+            leaveGameConfirmModal.classList.add('hidden'); // Hide confirmation modal
+
             phaseToShow.classList.remove('hidden');
         }
 
@@ -507,7 +582,7 @@
         }
 
         /**
-         * Prompts Player 1 for the number of players.
+         * Prompts Host for the number of players.
          */
         function promptForPlayerLimit() {
             showPhase(playerLimitModal); // Show the modal
@@ -545,8 +620,8 @@
                 const newGameRef = doc(gamesCollectionRef);
                 gameId = newGameRef.id;
 
-                // Host is the first player, and isHost is true
-                players = [{ id: userId, name: userName, isHost: true }];
+                // Host is the first player, and isHost is true, assign first color
+                players = [{ id: userId, name: userName, isHost: true, color: playerColors[0], pickedTokenId: null }];
 
                 await setDoc(newGameRef, {
                     players: players,
@@ -554,6 +629,7 @@
                     maxPlayers: maxPlayers, // Store max players
                     tokens: [],
                     revealedToken: null,
+                    revealedByPlayerName: null, // New field
                     createdAt: serverTimestamp(),
                     lastUpdated: serverTimestamp()
                 });
@@ -610,11 +686,11 @@
 
                 const gameData = gameSnap.data();
                 maxPlayers = gameData.maxPlayers || 2; // Get maxPlayers from game data
+                players = gameData.players || []; // Get current players
 
                 // Check if already in game
-                if (gameData.players && gameData.players.some(p => p.id === userId)) {
+                if (players.some(p => p.id === userId)) {
                     gameId = inputGameId;
-                    players = gameData.players;
                     playerRole = players.find(p => p.id === userId).isHost ? 'host' : 'guest';
                     showMessage(`Rejoined game ${gameId} as ${userName}.`);
                     listenToGameChanges();
@@ -622,16 +698,19 @@
                 }
 
                 // Check if game is full
-                if (gameData.players.length >= maxPlayers) {
+                if (players.length >= maxPlayers) {
                     showMessage("This game is already full.", true);
                     showPhase(initialPhase);
                     return;
                 }
 
+                // Assign next available color
+                const newPlayerColor = playerColors[players.length % playerColors.length];
+
                 // Add current user as a guest
                 playerRole = 'guest';
                 await updateDoc(gameRef, {
-                    players: arrayUnion({ id: userId, name: userName, isHost: false }),
+                    players: arrayUnion({ id: userId, name: userName, isHost: false, color: newPlayerColor, pickedTokenId: null }),
                     lastUpdated: serverTimestamp()
                 });
 
@@ -667,6 +746,18 @@
                     const gameData = docSnap.data();
                     players = gameData.players || []; // Update local players array
                     maxPlayers = gameData.maxPlayers || 2; // Ensure maxPlayers is updated
+                    tokens = gameData.tokens || []; // Update local tokens
+                    revealedToken = gameData.revealedToken;
+                    revealedByPlayerName = gameData.revealedByPlayerName; // Get revealed by name
+
+                    // Ensure playerRole is correctly set if it was null (e.g., after initial load)
+                    if (!playerRole && userId) {
+                        const currentPlayerInGame = players.find(p => p.id === userId);
+                        if (currentPlayerInGame) {
+                            playerRole = currentPlayerInGame.isHost ? 'host' : 'guest';
+                        }
+                    }
+
                     console.log("Game state updated:", gameData);
                     updateUIBasedOnGameState(gameData);
                 } else {
@@ -686,12 +777,14 @@
         function updateUIBasedOnGameState(gameData) {
             tokens = gameData.tokens || [];
             revealedToken = gameData.revealedToken;
+            revealedByPlayerName = gameData.revealedByPlayerName;
 
             updateConnectedPlayersList(); // Always update dynamic player list
 
             gameOverMessage.classList.add('hidden');
             revealedTokenContainer.classList.add('hidden');
-            playAgainBtn.classList.add('hidden');
+            hostButtonsContainer.classList.add('hidden'); // Hide host buttons by default
+            leaveGameBtn.classList.add('hidden'); // Hide leave button by default
 
             renderTokenCards(tokens);
 
@@ -699,24 +792,24 @@
             const isHost = players.some(p => p.id === userId && p.isHost);
             const gameIsFull = players.length === maxPlayers;
 
-            // Determine current user's role if not already set (e.g., after rejoining)
-            if (!playerRole) {
-                playerRole = isHost ? 'host' : 'guest';
+            // Display revealed token content and who picked it
+            if (revealedToken) {
+                revealedTokenContainer.classList.remove('hidden');
+                revealedTokenContent.textContent = revealedToken;
+                revealedByPlayerNameElement.textContent = revealedByPlayerName ? `Picked by: ${revealedByPlayerName}` : '';
             }
 
             // Host's flow
             if (playerRole === 'host') {
                 if (gameData.status === 'waiting_for_players' && !gameIsFull) {
                     showPhase(waitingPhase);
-                    waitingMessage.textContent = `Waiting for ${maxPlayers - players.length} more player(s) to join...`;
+                    waitingMessage.textContent = `Waiting for ${maxPlayers - players.length} more player(s) to join... (${players.length}/${maxPlayers})`;
                     gameIdDisplay.classList.remove('hidden');
                     currentShareGameId.textContent = gameId;
                     shareGameIdBtn.classList.remove('hidden');
                 } else if (gameData.status === 'waiting_for_players' && gameIsFull) {
-                    // All players joined, host can now create tokens
                     showPhase(numberInputPhase);
                     showMessage("All players joined! Please create your tokens.");
-                    // Update game status in Firestore to ready_to_create_tokens
                     if (gameData.status !== 'ready_to_create_tokens') {
                          updateDoc(doc(db, `artifacts/${appId}/public/data/games`, gameId), {
                             status: 'ready_to_create_tokens',
@@ -725,29 +818,27 @@
                     }
                 }
                 else if (gameData.status === 'ready_to_create_tokens' && gameIsFull && tokens.length === 0) {
-                    showPhase(numberInputPhase); // Host still needs to create tokens
+                    showPhase(numberInputPhase);
                 }
                 else if (gameData.status === 'tokens_created' || gameData.status === 'token_picked') {
                     showPhase(gamePhase);
                     gamePhaseMessage.textContent = "Waiting for players to pick tokens...";
+                    hostButtonsContainer.classList.remove('hidden'); // Show host buttons
 
                     if (allTokensRevealed) {
                         gameOverMessage.classList.remove('hidden');
                         gamePhaseMessage.textContent = "Game Over!";
-                        playAgainBtn.classList.remove('hidden');
-                    } else if (revealedToken) {
-                        revealedTokenContainer.classList.remove('hidden');
-                        revealedTokenContent.textContent = revealedToken;
                     }
                 }
             }
             // Guest's flow
             else if (playerRole === 'guest') {
+                leaveGameBtn.classList.remove('hidden'); // Show leave button for guests
+
                 if (gameData.status === 'waiting_for_players' && !gameIsFull) {
                     showPhase(waitingPhase);
-                    waitingMessage.textContent = `Joined game ${gameId}! Waiting for ${maxPlayers - players.length} more player(s) to join...`;
+                    waitingMessage.textContent = `Joined game ${gameId}! Waiting for ${maxPlayers - players.length} more player(s) to join... (${players.length}/${maxPlayers})`;
                 } else if (gameData.status === 'waiting_for_players' && gameIsFull) {
-                    // All players joined, waiting for host to create tokens
                     showPhase(waitingPhase);
                     waitingMessage.textContent = `All players joined! Waiting for host to create tokens...`;
                 }
@@ -759,14 +850,21 @@
                     showPhase(gamePhase);
                     gamePhaseMessage.textContent = "Your Turn: Pick a token!";
 
+                    // Check if current guest has already picked a token
+                    const currentPlayer = players.find(p => p.id === userId);
+                    if (currentPlayer && currentPlayer.pickedTokenId) {
+                        gamePhaseMessage.textContent = "You have already picked a token. Waiting for others...";
+                        tokenDisplayArea.querySelectorAll('.token-card-display').forEach(card => {
+                            if (!card.classList.contains('revealed')) {
+                                card.classList.add('disabled'); // Disable unrevealed tokens if already picked
+                            }
+                        });
+                    }
+
                     if (allTokensRevealed) {
                         gameOverMessage.classList.remove('hidden');
                         gamePhaseMessage.textContent = "Game Over! All tokens picked.";
-                        playAgainBtn.classList.remove('hidden');
                         showMessage('All tokens picked! Reset to play again.', false);
-                    } else if (revealedToken) {
-                        revealedTokenContainer.classList.remove('hidden');
-                        revealedTokenContent.textContent = revealedToken;
                     }
                 }
             }
@@ -792,28 +890,52 @@
                 const contentSpan = document.createElement('span');
                 contentSpan.classList.add('token-content-text');
 
+                const pickedByNameDiv = document.createElement('div');
+                pickedByNameDiv.classList.add('picked-by-name');
+
                 if (token.revealed) {
                     card.classList.add('revealed');
                     contentSpan.textContent = token.content;
                     card.classList.add('disabled'); // Disable revealed cards
+
+                    // Apply player's color if available
+                    const picker = players.find(p => p.id === token.pickedBy);
+                    if (picker && picker.color) {
+                        card.style.backgroundColor = picker.color;
+                        card.style.borderColor = picker.color; // Match border color
+                        card.style.color = 'white'; // Ensure text is visible
+                    } else {
+                        card.style.backgroundColor = '#d1fae5'; // Default green if color not found
+                        card.style.borderColor = '#34d399';
+                        card.style.color = '#065f46';
+                    }
+                    pickedByNameDiv.textContent = picker ? `by ${picker.name}` : '';
+
                 } else {
                     contentSpan.textContent = '?'; // Hidden content
-                    // Only allow guests to click unrevealed tokens
-                    if (playerRole === 'guest') {
+                    // Both host and guests can pick, but only one token per player
+                    const currentPlayer = players.find(p => p.id === userId);
+                    const hasPicked = currentPlayer && currentPlayer.pickedTokenId;
+
+                    if (!hasPicked) { // Only enable if current user hasn't picked yet
                         card.addEventListener('click', () => pickSpecificToken(token.id));
                     } else {
-                        card.classList.add('disabled'); // Disable for host
+                        card.classList.add('disabled'); // Disable if already picked
                     }
                 }
 
                 // If a token was picked by someone else (Host seeing Guest's pick)
+                // or if any player sees a token picked by someone else that is not yet revealed to them
                 if (token.pickedBy && token.pickedBy !== userId && !token.revealed) {
                     card.classList.add('picked');
                     contentSpan.textContent = 'Picked!';
                     card.classList.add('disabled');
+                    const picker = players.find(p => p.id === token.pickedBy);
+                    pickedByNameDiv.textContent = picker ? `by ${picker.name}` : '';
                 }
 
                 card.appendChild(contentSpan);
+                card.appendChild(pickedByNameDiv); // Add player name div
                 tokenDisplayArea.appendChild(card);
             });
         }
@@ -896,22 +1018,36 @@
                     tokens: tokens,
                     status: 'tokens_created',
                     revealedToken: null,
+                    revealedByPlayerName: null,
                     lastUpdated: serverTimestamp()
                 });
                 showMessage('Tokens confirmed and saved! Players can now pick.');
-            } catch (error) {
+            }
+            catch (error) {
                 console.error("Error confirming tokens:", error);
                 showMessage("Failed to save tokens. Please try again.", true);
             }
         }
 
         /**
-         * A guest player picks a specific token by its ID.
+         * A player picks a specific token by its ID.
+         * Both host and guests can pick.
          * @param {string} tokenId - The ID of the token to pick.
          */
         async function pickSpecificToken(tokenId) {
-            if (!gameId || playerRole !== 'guest') {
-                showMessage("You are not a guest player or not in a game.", true);
+            if (!gameId) {
+                showMessage("Not in a game.", true);
+                return;
+            }
+
+            const currentPlayer = players.find(p => p.id === userId);
+            if (!currentPlayer) {
+                showMessage("Your player data not found in game.", true);
+                return;
+            }
+
+            if (currentPlayer.pickedTokenId) {
+                showMessage("You have already picked a token for this round.", true);
                 return;
             }
 
@@ -930,11 +1066,17 @@
             updatedTokens[tokenIndex].revealed = true;
             updatedTokens[tokenIndex].pickedBy = userId; // Mark who picked it
 
+            const updatedPlayers = players.map(p =>
+                p.id === userId ? { ...p, pickedTokenId: tokenId } : p
+            );
+
             try {
                 const gameRef = doc(db, `artifacts/${appId}/public/data/games`, gameId);
                 await updateDoc(gameRef, {
                     tokens: updatedTokens,
+                    players: updatedPlayers, // Update players array with pickedTokenId
                     revealedToken: updatedTokens[tokenIndex].content,
+                    revealedByPlayerName: userName,
                     status: 'token_picked',
                     lastUpdated: serverTimestamp()
                 });
@@ -959,33 +1101,26 @@
                 try {
                     // Host clears the game document, retaining themselves as the host
                     await setDoc(doc(db, `artifacts/${appId}/public/data/games`, gameId), {
-                        players: [{ id: userId, name: userName, isHost: true }],
+                        players: [{ id: userId, name: userName, isHost: true, color: playerColors[0], pickedTokenId: null }],
                         status: 'waiting_for_players',
                         maxPlayers: maxPlayers, // Keep the same max players for next round
                         tokens: [],
                         revealedToken: null,
+                        revealedByPlayerName: null,
                         lastUpdated: serverTimestamp()
                     });
                     console.log("Game document reset by host.");
                 } catch (error) {
                     console.error("Error resetting game document:", error);
                 }
-            } else if (gameId && playerRole === 'guest') {
-                 // Guests simply leave the game document
-                try {
-                    await updateDoc(doc(db, `artifacts/${appId}/public/data/games`, gameId), {
-                        players: arrayRemove({ id: userId, name: userName, isHost: false }),
-                        lastUpdated: serverTimestamp()
-                    });
-                    console.log("Guest left the game.");
-                } catch (error) {
-                    console.error("Error leaving game:", error);
-                }
+            } else {
+                // If not host or no gameId, just reset local state
+                console.log("Not host or no gameId, performing local reset.");
             }
-
 
             tokens = [];
             revealedToken = null;
+            revealedByPlayerName = null;
             numberOfTokensToGenerate = 0;
             playerRole = null;
             players = [];
@@ -995,8 +1130,11 @@
             revealedTokenContainer.classList.add('hidden');
             gameOverMessage.classList.add('hidden');
             playAgainBtn.classList.add('hidden');
-            gameIdDisplay.classList.add('hidden'); // Hide game ID display
-            shareGameIdBtn.classList.add('hidden'); // Hide share button
+            resetGameBtn.classList.add('hidden'); // Ensure host buttons are hidden
+            leaveGameBtn.classList.add('hidden'); // Ensure guest button is hidden
+            hostButtonsContainer.classList.add('hidden'); // Hide container
+            gameIdDisplay.classList.add('hidden');
+            shareGameIdBtn.classList.add('hidden');
 
             // Clear URL parameters
             const url = new URL(window.location.href);
@@ -1020,10 +1158,15 @@
 
             if (playerRole === 'host') {
                 try {
+                    // Reset pickedTokenId for all players for the new round
+                    const resetPlayers = players.map(p => ({ ...p, pickedTokenId: null }));
+
                     // Reset game state in Firestore for the current game ID
                     await updateDoc(doc(db, `artifacts/${appId}/public/data/games`, gameId), {
                         tokens: [],
                         revealedToken: null,
+                        revealedByPlayerName: null,
+                        players: resetPlayers, // Update players with reset pickedTokenId
                         status: 'ready_to_create_tokens', // Go back to token creation phase
                         lastUpdated: serverTimestamp()
                     });
@@ -1036,6 +1179,85 @@
                 showMessage("Waiting for the host to start a new round.", false);
             }
         }
+
+        /**
+         * Guest leaves the current game.
+         */
+        async function leaveGame() {
+            showPhase(leaveGameConfirmModal); // Show confirmation modal
+        }
+
+        /**
+         * Confirms the guest wants to leave and updates Firestore.
+         */
+        async function confirmLeaveGame() {
+            leaveGameConfirmModal.classList.add('hidden'); // Hide modal
+
+            if (!gameId || playerRole !== 'guest') {
+                showMessage("You are not in a game or not a guest.", true);
+                return;
+            }
+
+            try {
+                // Remove current user from the players array in Firestore
+                await updateDoc(doc(db, `artifacts/${appId}/public/data/games`, gameId), {
+                    players: arrayRemove({ id: userId, name: userName, isHost: false, color: players.find(p => p.id === userId).color, pickedTokenId: players.find(p => p.id === userId).pickedTokenId }),
+                    lastUpdated: serverTimestamp()
+                });
+                showMessage("You have left the game.");
+                console.log("Guest left the game.");
+            } catch (error) {
+                console.error("Error leaving game:", error);
+                showMessage("Failed to leave game. Please try again.", true);
+            } finally {
+                // Always reset local state after attempting to leave
+                tokens = [];
+                revealedToken = null;
+                revealedByPlayerName = null;
+                numberOfTokensToGenerate = 0;
+                playerRole = null;
+                players = [];
+                gameId = null;
+                numTokensInput.value = 4;
+                dynamicTokenInputs.innerHTML = '';
+                revealedTokenContainer.classList.add('hidden');
+                gameOverMessage.classList.add('hidden');
+                playAgainBtn.classList.add('hidden');
+                resetGameBtn.classList.add('hidden');
+                leaveGameBtn.classList.add('hidden');
+                hostButtonsContainer.classList.add('hidden');
+                gameIdDisplay.classList.add('hidden');
+                shareGameIdBtn.classList.add('hidden');
+
+                const url = new URL(window.location.href);
+                url.searchParams.delete('gameId');
+                window.history.replaceState({}, document.title, url.toString());
+
+                showPhase(usernameInputPhase);
+                updateConnectedPlayersList();
+            }
+        }
+
+        /**
+         * Cancels leaving the game.
+         */
+        function cancelLeaveGame() {
+            leaveGameConfirmModal.classList.add('hidden'); // Hide modal
+            // Re-render UI to current game state
+            if (gameId) {
+                // This will re-trigger the onSnapshot listener if still connected
+                // Otherwise, manually show current phase
+                const gameRef = doc(db, `artifacts/${appId}/public/data/games`, gameId);
+                getDoc(gameRef).then(docSnap => {
+                    if (docSnap.exists()) {
+                        updateUIBasedOnGameState(docSnap.data());
+                    }
+                });
+            } else {
+                showPhase(initialPhase); // If no game, go back to initial phase
+            }
+        }
+
 
         /**
          * Shares the game ID using the Web Share API if available.
@@ -1075,8 +1297,8 @@
             }
         });
 
-        createGameBtn.addEventListener('click', createGame); // This now calls promptForPlayerLimit
-        confirmPlayerLimitBtn.addEventListener('click', confirmPlayerLimitAndCreateGame); // New listener for modal
+        createGameBtn.addEventListener('click', createGame);
+        confirmPlayerLimitBtn.addEventListener('click', confirmPlayerLimitAndCreateGame);
         maxPlayersInput.addEventListener('keydown', (event) => {
             if (event.key === 'Enter') {
                 event.preventDefault();
@@ -1089,7 +1311,10 @@
         confirmTokensBtn.addEventListener('click', confirmTokensAndStartGame);
         playAgainBtn.addEventListener('click', playAgain);
         resetGameBtn.addEventListener('click', resetGame);
-        shareGameIdBtn.addEventListener('click', shareGameId); // New share button listener
+        leaveGameBtn.addEventListener('click', leaveGame); // Guest leave button
+        confirmLeaveBtn.addEventListener('click', confirmLeaveGame); // Modal confirm
+        cancelLeaveBtn.addEventListener('click', cancelLeaveGame); // Modal cancel
+        shareGameIdBtn.addEventListener('click', shareGameId);
 
         numTokensInput.addEventListener('keydown', (event) => {
             if (event.key === 'Enter') {
