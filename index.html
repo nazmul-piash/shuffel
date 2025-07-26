@@ -218,9 +218,16 @@
             <div id="player2Indicator" class="player-indicator">Player 2</div>
         </div>
 
+        <!-- Username Input Phase -->
+        <div id="username-input-phase" class="w-full">
+            <p class="text-lg text-gray-600 mb-4">Enter your username to begin:</p>
+            <input type="text" id="usernameInput" class="input-field mb-4" placeholder="Your Username (e.g., PlayerOne)">
+            <button id="continueBtn" class="btn-primary w-full">Continue</button>
+        </div>
+
         <!-- Initial Phase: Create or Join Game -->
-        <div id="initial-phase" class="w-full">
-            <p class="text-lg text-gray-600 mb-4">Welcome! What would you like to do?</p>
+        <div id="initial-phase" class="w-full hidden">
+            <p class="text-lg text-gray-600 mb-4">Welcome, <span id="displayUsername" class="font-semibold text-indigo-700"></span>! What would you like to do?</p>
             <button id="createGameBtn" class="btn-primary w-full mb-4">Create New Game</button>
             <div class="flex items-center justify-center my-4">
                 <span class="text-gray-500">OR</span>
@@ -282,7 +289,7 @@
         // Firebase imports
         import { initializeApp } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-app.js";
         import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-auth.js";
-        import { getFirestore, doc, setDoc, getDoc, updateDoc, onSnapshot, collection, query, where, addDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-firestore.js";
+        import { getFirestore, doc, setDoc, getDoc, updateDoc, onSnapshot, arrayUnion, arrayRemove, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-firestore.js";
 
         // Firebase configuration from your Firebase project (provided by user)
         const firebaseConfig = {
@@ -302,6 +309,7 @@
         // Firebase App and Services
         let app, db, auth;
         let userId = null;
+        let userName = null; // New global variable for username
         let gameId = null;
         let unsubscribeFromGame = null; // To store the Firestore snapshot listener unsubscribe function
 
@@ -311,10 +319,16 @@
         let revealedToken = null; // Content of the last revealed token
         let numberOfTokensToGenerate = 0;
         let playerRole = null; // 'player1' or 'player2'
-        let player1Id = null; // Store player1's actual ID
-        let player2Id = null; // Store player2's actual ID
+        // 'players' will now be an array of objects: [{id: userId, name: userName, role: 'player1'}, ...]
+        let players = [];
+
 
         // Get DOM elements
+        const usernameInputPhase = document.getElementById('username-input-phase');
+        const usernameInput = document.getElementById('usernameInput');
+        const continueBtn = document.getElementById('continueBtn');
+        const displayUsername = document.getElementById('displayUsername'); // Span to show username in initial-phase
+
         const userIdDisplay = document.getElementById('userIdDisplay'); // Now refers to the container p tag
         const currentUserIdSpan = document.getElementById('currentUserId'); // The span inside userIdDisplay
         const player1Indicator = document.getElementById('player1Indicator');
@@ -325,7 +339,6 @@
         const joinGameBtn = document.getElementById('joinGameBtn');
         const waitingPhase = document.getElementById('waiting-phase');
         const waitingMessage = document.getElementById('waitingMessage');
-        // Removed inviteLinkContainer, inviteLink, copyLinkBtn as per request
         const numberInputPhase = document.getElementById('number-input-phase');
         const numTokensInput = document.getElementById('numTokensInput');
         const generateTokenFieldsBtn = document.getElementById('generateTokenFieldsBtn');
@@ -335,12 +348,12 @@
         const gamePhase = document.getElementById('game-phase');
         const gamePhaseMessage = document.getElementById('gamePhaseMessage');
         const tokenDisplayArea = document.getElementById('tokenDisplayArea');
-        const pickTokenBtn = document.getElementById('pickTokenBtn'); // This button is now hidden, picking is by clicking cards
+        const pickTokenBtn = document.getElementById('pickTokenBtn');
         const revealedTokenContainer = document.getElementById('revealedTokenContainer');
         const revealedTokenContent = document.getElementById('revealedTokenContent');
         const gameOverMessage = document.getElementById('gameOverMessage');
-        const playAgainBtn = document.getElementById('playAgainBtn'); // New replay button
-        const resetGameBtn = document.getElementById('resetGameBtn'); // Original reset button
+        const playAgainBtn = document.getElementById('playAgainBtn');
+        const resetGameBtn = document.getElementById('resetGameBtn');
         const messageBox = document.getElementById('messageBox');
 
         /**
@@ -366,28 +379,32 @@
          * @param {HTMLElement} phaseToShow - The phase element to display.
          */
         function showPhase(phaseToShow) {
+            usernameInputPhase.classList.add('hidden'); // Ensure username phase is hidden
             initialPhase.classList.add('hidden');
             waitingPhase.classList.add('hidden');
             numberInputPhase.classList.add('hidden');
             contentInputPhase.classList.add('hidden');
             gamePhase.classList.add('hidden');
-            playAgainBtn.classList.add('hidden'); // Hide replay button by default when changing phases
-            gameOverMessage.classList.add('hidden'); // Hide game over message by default
-            revealedTokenContainer.classList.add('hidden'); // Hide revealed token by default
+            playAgainBtn.classList.add('hidden');
+            gameOverMessage.classList.add('hidden');
+            revealedTokenContainer.classList.add('hidden');
             phaseToShow.classList.remove('hidden');
         }
 
         /**
          * Updates the player indicators to show whose turn/role it is.
+         * Now uses player names.
          * @param {string} activePlayerRole - 'player1', 'player2', or null/undefined for no active player.
          */
         function updatePlayerIndicators(activePlayerRole) {
             player1Indicator.classList.remove('active');
             player2Indicator.classList.remove('active');
 
-            // Show only first 4 chars of ID for brevity in UI, but keep full ID in console
-            player1Indicator.textContent = player1Id ? `Player 1 (${player1Id.substring(0, 4)}...)` : 'Player 1';
-            player2Indicator.textContent = player2Id ? `Player 2 (${player2Id.substring(0, 4)}...)` : 'Player 2';
+            const p1 = players.find(p => p.role === 'player1');
+            const p2 = players.find(p => p.role === 'player2');
+
+            player1Indicator.textContent = p1 ? `Player 1 (${p1.name})` : 'Player 1';
+            player2Indicator.textContent = p2 ? `Player 2 (${p2.name})` : 'Player 2';
 
             if (activePlayerRole === 'player1') {
                 player1Indicator.classList.add('active');
@@ -398,8 +415,9 @@
 
         /**
          * Initializes Firebase and authenticates the user.
+         * Now called after username is entered.
          */
-        async function initializeFirebase() {
+        async function initializeFirebaseAndAuthenticate() {
             try {
                 app = initializeApp(firebaseConfig);
                 db = getFirestore(app);
@@ -417,24 +435,24 @@
                 onAuthStateChanged(auth, (user) => {
                     if (user) {
                         userId = user.uid;
-                        currentUserIdSpan.textContent = userId; // Update the span
-                        // userIdDisplay.classList.remove('hidden'); // Keep hidden as per new request
+                        currentUserIdSpan.textContent = userId;
                         console.log("Authenticated with user ID:", userId);
+
+                        displayUsername.textContent = userName; // Set username in initial phase
+                        showPhase(initialPhase); // Show initial options after username and auth
+
                         const urlParams = new URLSearchParams(window.location.search);
                         const urlGameId = urlParams.get('gameId');
                         if (urlGameId) {
                             gameIdInput.value = urlGameId;
-                            joinGame();
+                            joinGame(); // Attempt to auto-join if gameId in URL
                         } else {
-                            showPhase(initialPhase);
                             updatePlayerIndicators(null);
                         }
                     } else {
                         currentUserIdSpan.textContent = 'Not Authenticated';
-                        // userIdDisplay.classList.remove('hidden'); // Keep hidden as per new request
                         console.log("No user is signed in.");
-                        showPhase(initialPhase);
-                        updatePlayerIndicators(null);
+                        showMessage("Authentication failed. Please refresh.", true);
                     }
                 });
             } catch (error) {
@@ -444,11 +462,24 @@
         }
 
         /**
+         * Handles username input and proceeds to authentication.
+         */
+        function handleUsernameInput() {
+            const inputName = usernameInput.value.trim();
+            if (inputName.length < 2) {
+                showMessage("Please enter a username (at least 2 characters).", true);
+                return;
+            }
+            userName = inputName;
+            initializeFirebaseAndAuthenticate(); // Proceed to Firebase auth after getting username
+        }
+
+        /**
          * Creates a new game session in Firestore.
          */
         async function createGame() {
-            if (!userId) {
-                showMessage("User not authenticated. Please wait.", true);
+            if (!userId || !userName) {
+                showMessage("User not authenticated or username missing. Please wait.", true);
                 return;
             }
 
@@ -460,19 +491,19 @@
                 const newGameRef = doc(gamesCollectionRef);
                 gameId = newGameRef.id;
 
+                // Initialize players array with Player 1
+                players = [{ id: userId, name: userName, role: 'player1' }];
+
                 await setDoc(newGameRef, {
-                    player1Id: userId,
-                    player2Id: null,
-                    status: 'waiting_for_player2',
-                    tokens: [], // Initialize with empty tokens
+                    players: players, // Store players array
+                    status: 'waiting_for_player2', // For now, still 2 players
+                    tokens: [],
                     revealedToken: null,
                     createdAt: serverTimestamp(),
                     lastUpdated: serverTimestamp()
                 });
 
                 playerRole = 'player1';
-                player1Id = userId;
-                // Only show the Game ID, not the full link
                 waitingMessage.textContent = `Game created! Share this Game ID with Player 2: ${gameId}`;
                 showMessage("Game created successfully!");
 
@@ -489,8 +520,8 @@
          * Joins an existing game session.
          */
         async function joinGame() {
-            if (!userId) {
-                showMessage("User not authenticated. Please wait.", true);
+            if (!userId || !userName) {
+                showMessage("User not authenticated or username missing. Please wait.", true);
                 return;
             }
 
@@ -515,32 +546,32 @@
 
                 const gameData = gameSnap.data();
 
-                if (gameData.player1Id === userId || gameData.player2Id === userId) {
+                // Check if already in game
+                if (gameData.players && gameData.players.some(p => p.id === userId)) {
                     gameId = inputGameId;
-                    playerRole = (gameData.player1Id === userId) ? 'player1' : 'player2';
-                    player1Id = gameData.player1Id;
-                    player2Id = gameData.player2Id;
+                    playerRole = gameData.players.find(p => p.id === userId).role; // Determine role from existing data
+                    players = gameData.players; // Sync local players array
                     showMessage(`Rejoined game ${gameId} as ${playerRole}.`);
                     listenToGameChanges();
                     return;
                 }
 
-                if (gameData.player2Id && gameData.player2Id !== userId) {
+                // For now, assume a 2-player game. Check if player2 slot is open.
+                if (gameData.players.length >= 2) { // If there are already 2 players
                     showMessage("This game is already full.", true);
                     showPhase(initialPhase);
                     return;
                 }
 
+                // Add current user as Player 2
+                playerRole = 'player2';
                 await updateDoc(gameRef, {
-                    player2Id: userId,
+                    players: arrayUnion({ id: userId, name: userName, role: 'player2' }),
                     status: 'ready_to_create_tokens',
                     lastUpdated: serverTimestamp()
                 });
 
                 gameId = inputGameId;
-                playerRole = 'player2';
-                player1Id = gameData.player1Id;
-                player2Id = userId;
                 waitingMessage.textContent = `Joined game ${gameId}! Waiting for Player 1 to create tokens...`;
                 showMessage("Successfully joined game!");
 
@@ -570,8 +601,14 @@
             unsubscribeFromGame = onSnapshot(gameRef, (docSnap) => {
                 if (docSnap.exists()) {
                     const gameData = docSnap.data();
-                    player1Id = gameData.player1Id;
-                    player2Id = gameData.player2Id;
+                    players = gameData.players || []; // Update local players array
+                    // Extract player1Id and player2Id for indicator display convenience
+                    const p1 = players.find(p => p.role === 'player1');
+                    const p2 = players.find(p => p.role === 'player2');
+                    // Update global player1Id and player2Id for indicator function
+                    player1Id = p1 ? p1.id : null;
+                    player2Id = p2 ? p2.id : null;
+
                     console.log("Game state updated:", gameData);
                     updateUIBasedOnGameState(gameData);
                 } else {
@@ -592,11 +629,11 @@
             tokens = gameData.tokens || [];
             revealedToken = gameData.revealedToken;
 
-            updatePlayerIndicators(playerRole);
+            updatePlayerIndicators(playerRole); // Update indicators with names
 
             gameOverMessage.classList.add('hidden');
             revealedTokenContainer.classList.add('hidden');
-            playAgainBtn.classList.add('hidden'); // Hide by default
+            playAgainBtn.classList.add('hidden');
 
             renderTokenCards(tokens);
 
@@ -604,21 +641,21 @@
 
             // Player 1's flow
             if (playerRole === 'player1') {
-                if (gameData.status === 'waiting_for_player2' && !gameData.player2Id) {
+                if (gameData.status === 'waiting_for_player2' && players.length < 2) {
                     showPhase(waitingPhase);
                     waitingMessage.textContent = `Game created! Share this Game ID with Player 2: ${gameId}`;
-                } else if (gameData.status === 'ready_to_create_tokens' && gameData.player2Id) {
+                } else if (gameData.status === 'ready_to_create_tokens' && players.length >= 2) {
                     showPhase(numberInputPhase);
                     showMessage("Player 2 has joined! Please create your tokens.");
                 } else if (gameData.status === 'tokens_created' || gameData.status === 'token_picked') {
                     showPhase(gamePhase);
                     gamePhaseMessage.textContent = "Player 2's Turn: Waiting for a pick...";
-                    pickTokenBtn.classList.add('hidden'); // Player 1 doesn't pick
+                    pickTokenBtn.classList.add('hidden');
 
                     if (allTokensRevealed) {
                         gameOverMessage.classList.remove('hidden');
                         gamePhaseMessage.textContent = "Game Over!";
-                        playAgainBtn.classList.remove('hidden'); // Show replay button for Player 1
+                        playAgainBtn.classList.remove('hidden');
                     } else if (revealedToken) {
                         revealedTokenContainer.classList.remove('hidden');
                         revealedTokenContent.textContent = revealedToken;
@@ -633,12 +670,12 @@
                 } else if (gameData.status === 'tokens_created' || gameData.status === 'token_picked') {
                     showPhase(gamePhase);
                     gamePhaseMessage.textContent = "Your Turn: Pick a token!";
-                    pickTokenBtn.classList.add('hidden'); // Picking is by clicking cards
+                    pickTokenBtn.classList.add('hidden');
 
                     if (allTokensRevealed) {
                         gameOverMessage.classList.remove('hidden');
                         gamePhaseMessage.textContent = "Game Over! All tokens picked.";
-                        playAgainBtn.classList.remove('hidden'); // Show replay button for Player 2
+                        playAgainBtn.classList.remove('hidden');
                         showMessage('All tokens picked! Reset to play again.', false);
                     } else if (revealedToken) {
                         revealedTokenContainer.classList.remove('hidden');
@@ -837,8 +874,7 @@
                 try {
                     // Only Player 1 should clear the game document for a full reset
                     await setDoc(doc(db, `artifacts/${appId}/public/data/games`, gameId), {
-                        player1Id: player1Id, // Keep player1Id for next game if they stay
-                        player2Id: null,
+                        players: [{ id: userId, name: userName, role: 'player1' }], // Reset to just player 1
                         status: 'waiting_for_player2',
                         tokens: [],
                         revealedToken: null,
@@ -854,21 +890,20 @@
             revealedToken = null;
             numberOfTokensToGenerate = 0;
             playerRole = null;
-            player1Id = null;
-            player2Id = null;
+            players = []; // Clear players array
             gameId = null;
             numTokensInput.value = 4;
             dynamicTokenInputs.innerHTML = '';
             revealedTokenContainer.classList.add('hidden');
             gameOverMessage.classList.add('hidden');
-            playAgainBtn.classList.add('hidden'); // Hide replay button
+            playAgainBtn.classList.add('hidden');
 
             // Clear URL parameters
             const url = new URL(window.location.href);
             url.searchParams.delete('gameId');
             window.history.replaceState({}, document.title, url.toString());
 
-            showPhase(initialPhase);
+            showPhase(usernameInputPhase); // Go back to username input
             updatePlayerIndicators(null);
             showMessage('Game reset. You can now create or join a new game!');
         }
@@ -903,25 +938,21 @@
             }
         }
 
-        /**
-         * Copies the invite link to the clipboard.
-         */
-        function copyInviteLink() {
-            // This function is now unused as we're not showing the full link,
-            // but keeping it for reference if needed.
-            // inviteLink.select();
-            // document.execCommand('copy');
-            // showMessage('Invite link copied to clipboard!');
-        }
-
         // Event Listeners
+        continueBtn.addEventListener('click', handleUsernameInput);
+        usernameInput.addEventListener('keydown', (event) => {
+            if (event.key === 'Enter') {
+                event.preventDefault();
+                handleUsernameInput();
+            }
+        });
+
         createGameBtn.addEventListener('click', createGame);
         joinGameBtn.addEventListener('click', joinGame);
         generateTokenFieldsBtn.addEventListener('click', generateTokenInputFields);
         confirmTokensBtn.addEventListener('click', confirmTokensAndStartGame);
-        playAgainBtn.addEventListener('click', playAgain); // New event listener for replay
+        playAgainBtn.addEventListener('click', playAgain);
         resetGameBtn.addEventListener('click', resetGame);
-        // copyLinkBtn.addEventListener('click', copyInviteLink); // No longer needed
 
         numTokensInput.addEventListener('keydown', (event) => {
             if (event.key === 'Enter') {
@@ -937,7 +968,8 @@
             }
         });
 
-        window.onload = initializeFirebase;
+        // Start by showing the username input phase
+        window.onload = () => showPhase(usernameInputPhase);
 
     </script>
 </body>
