@@ -124,31 +124,21 @@
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
         }
-        .copy-button {
-            background-color: #10b981; /* Emerald green */
+        .player-tag { /* New style for dynamic player tags */
+            padding: 0.4rem 0.8rem;
+            border-radius: 9999px; /* Fully rounded pill shape */
+            font-weight: 600;
+            font-size: 0.875rem; /* text-sm */
+            background-color: #e0e7ff; /* Light indigo */
+            color: #4f46e5; /* Indigo */
+            border: 1px solid #c7d2fe;
+            transition: all 0.2s ease-in-out;
+        }
+        .player-tag.current-user {
+            background-color: #6366f1; /* Stronger indigo */
             color: white;
-            padding: 0.5rem 1rem;
-            border-radius: 0.5rem;
-            font-weight: 500;
-            transition: background-color 0.2s ease-in-out;
-            margin-left: 10px;
-        }
-        .copy-button:hover {
-            background-color: #059669; /* Darker emerald */
-        }
-        .player-indicator {
-            padding: 0.5rem 1rem;
-            border-radius: 0.75rem;
-            font-weight: 700;
-            color: #4f46e5;
-            background-color: #e0e7ff;
-            border: 2px solid transparent;
-            transition: all 0.3s ease-in-out;
-        }
-        .player-indicator.active {
             border-color: #4f46e5;
-            background-color: #c7d2fe;
-            box-shadow: 0 4px 10px rgba(79, 70, 229, 0.2);
+            box-shadow: 0 2px 5px rgba(99, 102, 241, 0.3);
         }
         .token-card-display {
             background-color: #a5b4fc; /* Slightly darker indigo for folded state */
@@ -204,6 +194,28 @@
             word-break: break-all;
             text-align: center;
         }
+        /* Modal styles for player limit input */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.6);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+        .modal-content {
+            background-color: #ffffff;
+            padding: 2rem;
+            border-radius: 1rem;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+            width: 90%;
+            max-width: 400px;
+            text-align: center;
+        }
     </style>
 </head>
 <body class="bg-gray-100 flex items-center justify-center min-h-screen p-5">
@@ -212,10 +224,9 @@
         <!-- User ID display, initially hidden -->
         <p id="userIdDisplay" class="text-sm text-gray-500 mb-4 break-all hidden">Your User ID: <span id="currentUserId" class="font-mono">Loading...</span></p>
 
-        <!-- Player Indicators -->
-        <div class="flex justify-center gap-4 mb-6 w-full">
-            <div id="player1Indicator" class="player-indicator">Player 1</div>
-            <div id="player2Indicator" class="player-indicator">Player 2</div>
+        <!-- Dynamic Player List Display (replaces fixed Player 1/2 indicators) -->
+        <div id="connectedPlayersList" class="flex flex-wrap justify-center gap-2 mb-6 w-full">
+            <!-- Player tags will be dynamically inserted here -->
         </div>
 
         <!-- Username Input Phase -->
@@ -238,30 +249,31 @@
 
         <!-- Waiting Phase (for Player 1 after creating game, or Player 2 after joining) -->
         <div id="waiting-phase" class="w-full hidden">
-            <p class="text-lg text-gray-600 mb-4" id="waitingMessage">Waiting for other player...</p>
-            <!-- Invite link container is now removed, only Game ID will be shown -->
+            <p class="text-lg text-gray-600 mb-4" id="waitingMessage">Waiting for other players...</p>
+            <p id="gameIdDisplay" class="text-xl font-bold text-gray-800 mb-4 hidden">Game ID: <span id="currentShareGameId" class="font-mono"></span></p>
+            <button id="shareGameIdBtn" class="btn-primary mb-4 hidden">Share Game ID</button>
             <div class="loading-spinner"></div>
         </div>
 
-        <!-- Phase 1: Specify Number of Tokens (Player 1 only) -->
+        <!-- Phase 1: Specify Number of Tokens (Host only) -->
         <div id="number-input-phase" class="w-full hidden">
-            <p class="text-lg text-gray-600 mb-4">Player 1: How many tokens do you want?</p>
+            <p class="text-lg text-gray-600 mb-4">Host: How many tokens do you want?</p>
             <input type="number" id="numTokensInput" class="input-field mb-4" min="2" value="4" placeholder="Enter number of tokens (min 2)">
             <button id="generateTokenFieldsBtn" class="btn-primary w-full mb-6">Generate Token Fields</button>
         </div>
 
-        <!-- Phase 2: Enter Token Content (Player 1 only) -->
+        <!-- Phase 2: Enter Token Content (Host only) -->
         <div id="content-input-phase" class="w-full hidden">
-            <p class="text-lg text-gray-600 mb-4">Player 1: Enter text for each token.</p>
+            <p class="text-lg text-gray-600 mb-4">Host: Enter text for each token.</p>
             <div id="dynamicTokenInputs" class="flex flex-col gap-3 mb-6">
                 <!-- Dynamic token input fields will be appended here -->
             </div>
             <button id="confirmTokensBtn" class="btn-primary w-full mb-6">Confirm Tokens & Shuffle</button>
         </div>
 
-        <!-- Phase 3: Pick Token (Player 2 only) -->
+        <!-- Phase 3: Pick Token -->
         <div id="game-phase" class="w-full hidden">
-            <p class="text-lg text-gray-600 mb-6" id="gamePhaseMessage">Player 2: Pick a token!</p>
+            <p class="text-lg text-gray-600 mb-6" id="gamePhaseMessage">Pick a token!</p>
 
             <!-- Display area for individual tokens -->
             <div id="tokenDisplayArea" class="flex flex-wrap justify-center gap-4 mb-6">
@@ -285,11 +297,22 @@
         <div id="messageBox" class="message-box w-full hidden"></div>
     </div>
 
+    <!-- Modal for Player Limit Input -->
+    <div id="playerLimitModal" class="modal-overlay hidden">
+        <div class="modal-content">
+            <h2 class="text-2xl font-bold mb-4">Set Player Limit</h2>
+            <p class="text-md text-gray-700 mb-4">How many players will join this game?</p>
+            <input type="number" id="maxPlayersInput" class="input-field mb-4" min="2" max="10" value="2">
+            <button id="confirmPlayerLimitBtn" class="btn-primary w-full">Confirm</button>
+        </div>
+    </div>
+
     <script type="module">
         // Firebase imports
+        // Corrected import for 'collection' from 'firebase/firestore'
         import { initializeApp } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-app.js";
         import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-auth.js";
-        import { getFirestore, doc, setDoc, getDoc, updateDoc, onSnapshot, arrayUnion, arrayRemove, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-firestore.js";
+        import { getFirestore, doc, setDoc, getDoc, updateDoc, onSnapshot, collection, arrayUnion, arrayRemove, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-firestore.js";
 
         // Firebase configuration from your Firebase project (provided by user)
         const firebaseConfig = {
@@ -309,36 +332,41 @@
         // Firebase App and Services
         let app, db, auth;
         let userId = null;
-        let userName = null; // New global variable for username
+        let userName = null; // Global variable for username
         let gameId = null;
         let unsubscribeFromGame = null; // To store the Firestore snapshot listener unsubscribe function
 
         // Game state variables
-        // Tokens will now be objects: { id: string, content: string, revealed: boolean, pickedBy: string|null }
+        // Tokens: { id: string, content: string, revealed: boolean, pickedBy: string|null }
         let tokens = [];
         let revealedToken = null; // Content of the last revealed token
         let numberOfTokensToGenerate = 0;
-        let playerRole = null; // 'player1' or 'player2'
-        // 'players' will now be an array of objects: [{id: userId, name: userName, role: 'player1'}, ...]
+        // playerRole will be 'host' or 'guest'
+        let playerRole = null;
+        // Players: [{id: userId, name: userName, isHost: boolean}, ...]
         let players = [];
-
+        let maxPlayers = 2; // Default max players
 
         // Get DOM elements
         const usernameInputPhase = document.getElementById('username-input-phase');
         const usernameInput = document.getElementById('usernameInput');
         const continueBtn = document.getElementById('continueBtn');
-        const displayUsername = document.getElementById('displayUsername'); // Span to show username in initial-phase
+        const displayUsername = document.getElementById('displayUsername');
 
-        const userIdDisplay = document.getElementById('userIdDisplay'); // Now refers to the container p tag
-        const currentUserIdSpan = document.getElementById('currentUserId'); // The span inside userIdDisplay
-        const player1Indicator = document.getElementById('player1Indicator');
-        const player2Indicator = document.getElementById('player2Indicator');
+        const userIdDisplay = document.getElementById('userIdDisplay');
+        const currentUserIdSpan = document.getElementById('currentUserId');
+        const connectedPlayersList = document.getElementById('connectedPlayersList'); // New element for dynamic player list
+
         const initialPhase = document.getElementById('initial-phase');
         const createGameBtn = document.getElementById('createGameBtn');
         const gameIdInput = document.getElementById('gameIdInput');
         const joinGameBtn = document.getElementById('joinGameBtn');
         const waitingPhase = document.getElementById('waiting-phase');
         const waitingMessage = document.getElementById('waitingMessage');
+        const gameIdDisplay = document.getElementById('gameIdDisplay'); // To show game ID in waiting phase
+        const currentShareGameId = document.getElementById('currentShareGameId'); // Span for the game ID
+        const shareGameIdBtn = document.getElementById('shareGameIdBtn'); // Share button
+
         const numberInputPhase = document.getElementById('number-input-phase');
         const numTokensInput = document.getElementById('numTokensInput');
         const generateTokenFieldsBtn = document.getElementById('generateTokenFieldsBtn');
@@ -355,6 +383,11 @@
         const playAgainBtn = document.getElementById('playAgainBtn');
         const resetGameBtn = document.getElementById('resetGameBtn');
         const messageBox = document.getElementById('messageBox');
+
+        // Modal elements
+        const playerLimitModal = document.getElementById('playerLimitModal');
+        const maxPlayersInput = document.getElementById('maxPlayersInput');
+        const confirmPlayerLimitBtn = document.getElementById('confirmPlayerLimitBtn');
 
         /**
          * Displays a message in the message box.
@@ -379,7 +412,7 @@
          * @param {HTMLElement} phaseToShow - The phase element to display.
          */
         function showPhase(phaseToShow) {
-            usernameInputPhase.classList.add('hidden'); // Ensure username phase is hidden
+            usernameInputPhase.classList.add('hidden');
             initialPhase.classList.add('hidden');
             waitingPhase.classList.add('hidden');
             numberInputPhase.classList.add('hidden');
@@ -388,29 +421,31 @@
             playAgainBtn.classList.add('hidden');
             gameOverMessage.classList.add('hidden');
             revealedTokenContainer.classList.add('hidden');
+            gameIdDisplay.classList.add('hidden'); // Hide game ID display by default
+            shareGameIdBtn.classList.add('hidden'); // Hide share button by default
+            playerLimitModal.classList.add('hidden'); // Hide modal by default
             phaseToShow.classList.remove('hidden');
         }
 
         /**
-         * Updates the player indicators to show whose turn/role it is.
-         * Now uses player names.
-         * @param {string} activePlayerRole - 'player1', 'player2', or null/undefined for no active player.
+         * Updates the dynamic player list.
          */
-        function updatePlayerIndicators(activePlayerRole) {
-            player1Indicator.classList.remove('active');
-            player2Indicator.classList.remove('active');
-
-            const p1 = players.find(p => p.role === 'player1');
-            const p2 = players.find(p => p.role === 'player2');
-
-            player1Indicator.textContent = p1 ? `Player 1 (${p1.name})` : 'Player 1';
-            player2Indicator.textContent = p2 ? `Player 2 (${p2.name})` : 'Player 2';
-
-            if (activePlayerRole === 'player1') {
-                player1Indicator.classList.add('active');
-            } else if (activePlayerRole === 'player2') {
-                player2Indicator.classList.add('active');
+        function updateConnectedPlayersList() {
+            connectedPlayersList.innerHTML = ''; // Clear existing tags
+            if (players.length === 0) {
+                connectedPlayersList.innerHTML = '<p class="text-gray-500 text-sm">No players connected yet.</p>';
+                return;
             }
+
+            players.forEach(player => {
+                const playerTag = document.createElement('div');
+                playerTag.classList.add('player-tag');
+                playerTag.textContent = player.name;
+                if (player.id === userId) {
+                    playerTag.classList.add('current-user');
+                }
+                connectedPlayersList.appendChild(playerTag);
+            });
         }
 
         /**
@@ -423,9 +458,6 @@
                 db = getFirestore(app);
                 auth = getAuth(app);
 
-                // IMPORTANT: If you are seeing "auth/configuration-not-found" error,
-                // it means Firebase Authentication (Anonymous provider) is not enabled in your project.
-                // Go to Firebase Console -> Authentication -> Get started, and enable the "Anonymous" provider.
                 if (initialAuthToken) {
                     await signInWithCustomToken(auth, initialAuthToken);
                 } else {
@@ -438,16 +470,16 @@
                         currentUserIdSpan.textContent = userId;
                         console.log("Authenticated with user ID:", userId);
 
-                        displayUsername.textContent = userName; // Set username in initial phase
-                        showPhase(initialPhase); // Show initial options after username and auth
+                        displayUsername.textContent = userName;
+                        showPhase(initialPhase);
 
                         const urlParams = new URLSearchParams(window.location.search);
                         const urlGameId = urlParams.get('gameId');
                         if (urlGameId) {
                             gameIdInput.value = urlGameId;
-                            joinGame(); // Attempt to auto-join if gameId in URL
+                            joinGame();
                         } else {
-                            updatePlayerIndicators(null);
+                            updateConnectedPlayersList(); // Initial render of player list (only current user)
                         }
                     } else {
                         currentUserIdSpan.textContent = 'Not Authenticated';
@@ -471,7 +503,15 @@
                 return;
             }
             userName = inputName;
-            initializeFirebaseAndAuthenticate(); // Proceed to Firebase auth after getting username
+            initializeFirebaseAndAuthenticate();
+        }
+
+        /**
+         * Prompts Player 1 for the number of players.
+         */
+        function promptForPlayerLimit() {
+            showPhase(playerLimitModal); // Show the modal
+            maxPlayersInput.value = 2; // Reset to default
         }
 
         /**
@@ -483,28 +523,49 @@
                 return;
             }
 
-            try {
-                showPhase(waitingPhase);
-                waitingMessage.textContent = "Creating game...";
+            // Show modal to get maxPlayers
+            promptForPlayerLimit();
+        }
 
+        /**
+         * Confirms player limit and proceeds to create the game.
+         */
+        async function confirmPlayerLimitAndCreateGame() {
+            const limit = parseInt(maxPlayersInput.value, 10);
+            if (isNaN(limit) || limit < 2 || limit > 10) {
+                showMessage("Please enter a valid number of players between 2 and 10.", true);
+                return;
+            }
+            maxPlayers = limit; // Set global maxPlayers
+            showPhase(waitingPhase); // Hide modal and show waiting phase
+            waitingMessage.textContent = "Creating game...";
+
+            try {
                 const gamesCollectionRef = collection(db, `artifacts/${appId}/public/data/games`);
                 const newGameRef = doc(gamesCollectionRef);
                 gameId = newGameRef.id;
 
-                // Initialize players array with Player 1
-                players = [{ id: userId, name: userName, role: 'player1' }];
+                // Host is the first player, and isHost is true
+                players = [{ id: userId, name: userName, isHost: true }];
 
                 await setDoc(newGameRef, {
-                    players: players, // Store players array
-                    status: 'waiting_for_player2', // For now, still 2 players
+                    players: players,
+                    status: 'waiting_for_players', // More generic status
+                    maxPlayers: maxPlayers, // Store max players
                     tokens: [],
                     revealedToken: null,
                     createdAt: serverTimestamp(),
                     lastUpdated: serverTimestamp()
                 });
 
-                playerRole = 'player1';
-                waitingMessage.textContent = `Game created! Share this Game ID with Player 2: ${gameId}`;
+                // Set playerRole for the host
+                playerRole = 'host';
+
+                gameIdDisplay.classList.remove('hidden'); // Show game ID container
+                currentShareGameId.textContent = gameId; // Display only the ID
+                shareGameIdBtn.classList.remove('hidden'); // Show share button
+
+                waitingMessage.textContent = `Game created! Share this Game ID with others:`;
                 showMessage("Game created successfully!");
 
                 listenToGameChanges();
@@ -515,6 +576,7 @@
                 showPhase(initialPhase);
             }
         }
+
 
         /**
          * Joins an existing game session.
@@ -534,6 +596,8 @@
             try {
                 showPhase(waitingPhase);
                 waitingMessage.textContent = "Joining game...";
+                gameIdDisplay.classList.add('hidden'); // Hide game ID display
+                shareGameIdBtn.classList.add('hidden'); // Hide share button
 
                 const gameRef = doc(db, `artifacts/${appId}/public/data/games`, inputGameId);
                 const gameSnap = await getDoc(gameRef);
@@ -545,34 +609,34 @@
                 }
 
                 const gameData = gameSnap.data();
+                maxPlayers = gameData.maxPlayers || 2; // Get maxPlayers from game data
 
                 // Check if already in game
                 if (gameData.players && gameData.players.some(p => p.id === userId)) {
                     gameId = inputGameId;
-                    playerRole = gameData.players.find(p => p.id === userId).role; // Determine role from existing data
-                    players = gameData.players; // Sync local players array
-                    showMessage(`Rejoined game ${gameId} as ${playerRole}.`);
+                    players = gameData.players;
+                    playerRole = players.find(p => p.id === userId).isHost ? 'host' : 'guest';
+                    showMessage(`Rejoined game ${gameId} as ${userName}.`);
                     listenToGameChanges();
                     return;
                 }
 
-                // For now, assume a 2-player game. Check if player2 slot is open.
-                if (gameData.players.length >= 2) { // If there are already 2 players
+                // Check if game is full
+                if (gameData.players.length >= maxPlayers) {
                     showMessage("This game is already full.", true);
                     showPhase(initialPhase);
                     return;
                 }
 
-                // Add current user as Player 2
-                playerRole = 'player2';
+                // Add current user as a guest
+                playerRole = 'guest';
                 await updateDoc(gameRef, {
-                    players: arrayUnion({ id: userId, name: userName, role: 'player2' }),
-                    status: 'ready_to_create_tokens',
+                    players: arrayUnion({ id: userId, name: userName, isHost: false }),
                     lastUpdated: serverTimestamp()
                 });
 
                 gameId = inputGameId;
-                waitingMessage.textContent = `Joined game ${gameId}! Waiting for Player 1 to create tokens...`;
+                waitingMessage.textContent = `Joined game ${gameId}! Waiting for host to start...`;
                 showMessage("Successfully joined game!");
 
                 listenToGameChanges();
@@ -602,13 +666,7 @@
                 if (docSnap.exists()) {
                     const gameData = docSnap.data();
                     players = gameData.players || []; // Update local players array
-                    // Extract player1Id and player2Id for indicator display convenience
-                    const p1 = players.find(p => p.role === 'player1');
-                    const p2 = players.find(p => p.role === 'player2');
-                    // Update global player1Id and player2Id for indicator function
-                    player1Id = p1 ? p1.id : null;
-                    player2Id = p2 ? p2.id : null;
-
+                    maxPlayers = gameData.maxPlayers || 2; // Ensure maxPlayers is updated
                     console.log("Game state updated:", gameData);
                     updateUIBasedOnGameState(gameData);
                 } else {
@@ -629,7 +687,7 @@
             tokens = gameData.tokens || [];
             revealedToken = gameData.revealedToken;
 
-            updatePlayerIndicators(playerRole); // Update indicators with names
+            updateConnectedPlayersList(); // Always update dynamic player list
 
             gameOverMessage.classList.add('hidden');
             revealedTokenContainer.classList.add('hidden');
@@ -638,19 +696,40 @@
             renderTokenCards(tokens);
 
             const allTokensRevealed = tokens.length > 0 && tokens.every(token => token.revealed);
+            const isHost = players.some(p => p.id === userId && p.isHost);
+            const gameIsFull = players.length === maxPlayers;
 
-            // Player 1's flow
-            if (playerRole === 'player1') {
-                if (gameData.status === 'waiting_for_player2' && players.length < 2) {
+            // Determine current user's role if not already set (e.g., after rejoining)
+            if (!playerRole) {
+                playerRole = isHost ? 'host' : 'guest';
+            }
+
+            // Host's flow
+            if (playerRole === 'host') {
+                if (gameData.status === 'waiting_for_players' && !gameIsFull) {
                     showPhase(waitingPhase);
-                    waitingMessage.textContent = `Game created! Share this Game ID with Player 2: ${gameId}`;
-                } else if (gameData.status === 'ready_to_create_tokens' && players.length >= 2) {
+                    waitingMessage.textContent = `Waiting for ${maxPlayers - players.length} more player(s) to join...`;
+                    gameIdDisplay.classList.remove('hidden');
+                    currentShareGameId.textContent = gameId;
+                    shareGameIdBtn.classList.remove('hidden');
+                } else if (gameData.status === 'waiting_for_players' && gameIsFull) {
+                    // All players joined, host can now create tokens
                     showPhase(numberInputPhase);
-                    showMessage("Player 2 has joined! Please create your tokens.");
-                } else if (gameData.status === 'tokens_created' || gameData.status === 'token_picked') {
+                    showMessage("All players joined! Please create your tokens.");
+                    // Update game status in Firestore to ready_to_create_tokens
+                    if (gameData.status !== 'ready_to_create_tokens') {
+                         updateDoc(doc(db, `artifacts/${appId}/public/data/games`, gameId), {
+                            status: 'ready_to_create_tokens',
+                            lastUpdated: serverTimestamp()
+                        }).catch(e => console.error("Error updating status to ready_to_create_tokens:", e));
+                    }
+                }
+                else if (gameData.status === 'ready_to_create_tokens' && gameIsFull && tokens.length === 0) {
+                    showPhase(numberInputPhase); // Host still needs to create tokens
+                }
+                else if (gameData.status === 'tokens_created' || gameData.status === 'token_picked') {
                     showPhase(gamePhase);
-                    gamePhaseMessage.textContent = "Player 2's Turn: Waiting for a pick...";
-                    pickTokenBtn.classList.add('hidden');
+                    gamePhaseMessage.textContent = "Waiting for players to pick tokens...";
 
                     if (allTokensRevealed) {
                         gameOverMessage.classList.remove('hidden');
@@ -662,15 +741,23 @@
                     }
                 }
             }
-            // Player 2's flow
-            else if (playerRole === 'player2') {
-                if (gameData.status === 'waiting_for_player2' || gameData.status === 'ready_to_create_tokens') {
+            // Guest's flow
+            else if (playerRole === 'guest') {
+                if (gameData.status === 'waiting_for_players' && !gameIsFull) {
                     showPhase(waitingPhase);
-                    waitingMessage.textContent = `Joined game ${gameId}! Waiting for Player 1 to create tokens...`;
-                } else if (gameData.status === 'tokens_created' || gameData.status === 'token_picked') {
+                    waitingMessage.textContent = `Joined game ${gameId}! Waiting for ${maxPlayers - players.length} more player(s) to join...`;
+                } else if (gameData.status === 'waiting_for_players' && gameIsFull) {
+                    // All players joined, waiting for host to create tokens
+                    showPhase(waitingPhase);
+                    waitingMessage.textContent = `All players joined! Waiting for host to create tokens...`;
+                }
+                else if (gameData.status === 'ready_to_create_tokens' && gameIsFull && tokens.length === 0) {
+                    showPhase(waitingPhase);
+                    waitingMessage.textContent = `Host is creating tokens...`;
+                }
+                else if (gameData.status === 'tokens_created' || gameData.status === 'token_picked') {
                     showPhase(gamePhase);
                     gamePhaseMessage.textContent = "Your Turn: Pick a token!";
-                    pickTokenBtn.classList.add('hidden');
 
                     if (allTokensRevealed) {
                         gameOverMessage.classList.remove('hidden');
@@ -711,21 +798,19 @@
                     card.classList.add('disabled'); // Disable revealed cards
                 } else {
                     contentSpan.textContent = '?'; // Hidden content
-                    if (playerRole === 'player2') {
-                        // Only Player 2 can click unrevealed tokens
+                    // Only allow guests to click unrevealed tokens
+                    if (playerRole === 'guest') {
                         card.addEventListener('click', () => pickSpecificToken(token.id));
                     } else {
-                        // Player 1 cannot click, so disable interaction
-                        card.classList.add('disabled');
+                        card.classList.add('disabled'); // Disable for host
                     }
                 }
 
-                // If a token was picked by someone else (Player 1 seeing Player 2's pick)
-                // This condition applies if the token is NOT revealed yet, but HAS been picked by another user.
+                // If a token was picked by someone else (Host seeing Guest's pick)
                 if (token.pickedBy && token.pickedBy !== userId && !token.revealed) {
-                    card.classList.add('picked'); // Style to show it was picked by other player
-                    contentSpan.textContent = 'Picked!'; // Indicate it was picked
-                    card.classList.add('disabled'); // Disable picked cards
+                    card.classList.add('picked');
+                    contentSpan.textContent = 'Picked!';
+                    card.classList.add('disabled');
                 }
 
                 card.appendChild(contentSpan);
@@ -735,7 +820,7 @@
 
 
         /**
-         * Generates the specified number of input fields for token content (Player 1).
+         * Generates the specified number of input fields for token content (Host only).
          */
         function generateTokenInputFields() {
             const num = parseInt(numTokensInput.value, 10);
@@ -761,11 +846,11 @@
         }
 
         /**
-         * Collects text from dynamic input fields and updates Firestore (Player 1).
+         * Collects text from dynamic input fields and updates Firestore (Host only).
          */
         async function confirmTokensAndStartGame() {
-            if (!gameId || playerRole !== 'player1') {
-                showMessage("You are not Player 1 or not in a game.", true);
+            if (!gameId || playerRole !== 'host') {
+                showMessage("You are not the host or not in a game.", true);
                 return;
             }
 
@@ -775,12 +860,11 @@
             for (let i = 0; i < numberOfTokensToGenerate; i++) {
                 const textarea = document.getElementById(`tokenText_${i}`);
                 if (textarea && textarea.value.trim() !== '') {
-                    // Assign a unique ID to each token object
                     newTokens.push({
-                        id: `token-${Date.now()}-${i}`, // Simple unique ID
+                        id: `token-${Date.now()}-${i}`,
                         content: textarea.value.trim(),
                         revealed: false,
-                        pickedBy: null // Track who picked it, if anyone
+                        pickedBy: null
                     });
                 } else {
                     allFieldsFilled = false;
@@ -814,7 +898,7 @@
                     revealedToken: null,
                     lastUpdated: serverTimestamp()
                 });
-                showMessage('Tokens confirmed and saved! Player 2 can now pick.');
+                showMessage('Tokens confirmed and saved! Players can now pick.');
             } catch (error) {
                 console.error("Error confirming tokens:", error);
                 showMessage("Failed to save tokens. Please try again.", true);
@@ -822,12 +906,12 @@
         }
 
         /**
-         * Player 2 picks a specific token by its ID.
+         * A guest player picks a specific token by its ID.
          * @param {string} tokenId - The ID of the token to pick.
          */
         async function pickSpecificToken(tokenId) {
-            if (!gameId || playerRole !== 'player2') {
-                showMessage("You are not Player 2 or not in a game.", true);
+            if (!gameId || playerRole !== 'guest') {
+                showMessage("You are not a guest player or not in a game.", true);
                 return;
             }
 
@@ -850,7 +934,7 @@
                 const gameRef = doc(db, `artifacts/${appId}/public/data/games`, gameId);
                 await updateDoc(gameRef, {
                     tokens: updatedTokens,
-                    revealedToken: updatedTokens[tokenIndex].content, // Content of the specific picked token
+                    revealedToken: updatedTokens[tokenIndex].content,
                     status: 'token_picked',
                     lastUpdated: serverTimestamp()
                 });
@@ -864,53 +948,69 @@
         /**
          * Resets the game to its initial state and clears Firestore data.
          * This performs a full reset, returning to the initial create/join screen.
+         * Only the host can fully reset the game document.
          */
         async function resetGame() {
             if (unsubscribeFromGame) {
                 unsubscribeFromGame();
             }
 
-            if (gameId && playerRole === 'player1') {
+            if (gameId && playerRole === 'host') {
                 try {
-                    // Only Player 1 should clear the game document for a full reset
+                    // Host clears the game document, retaining themselves as the host
                     await setDoc(doc(db, `artifacts/${appId}/public/data/games`, gameId), {
-                        players: [{ id: userId, name: userName, role: 'player1' }], // Reset to just player 1
-                        status: 'waiting_for_player2',
+                        players: [{ id: userId, name: userName, isHost: true }],
+                        status: 'waiting_for_players',
+                        maxPlayers: maxPlayers, // Keep the same max players for next round
                         tokens: [],
                         revealedToken: null,
                         lastUpdated: serverTimestamp()
                     });
-                    console.log("Game document reset by Player 1.");
+                    console.log("Game document reset by host.");
                 } catch (error) {
                     console.error("Error resetting game document:", error);
                 }
+            } else if (gameId && playerRole === 'guest') {
+                 // Guests simply leave the game document
+                try {
+                    await updateDoc(doc(db, `artifacts/${appId}/public/data/games`, gameId), {
+                        players: arrayRemove({ id: userId, name: userName, isHost: false }),
+                        lastUpdated: serverTimestamp()
+                    });
+                    console.log("Guest left the game.");
+                } catch (error) {
+                    console.error("Error leaving game:", error);
+                }
             }
+
 
             tokens = [];
             revealedToken = null;
             numberOfTokensToGenerate = 0;
             playerRole = null;
-            players = []; // Clear players array
+            players = [];
             gameId = null;
             numTokensInput.value = 4;
             dynamicTokenInputs.innerHTML = '';
             revealedTokenContainer.classList.add('hidden');
             gameOverMessage.classList.add('hidden');
             playAgainBtn.classList.add('hidden');
+            gameIdDisplay.classList.add('hidden'); // Hide game ID display
+            shareGameIdBtn.classList.add('hidden'); // Hide share button
 
             // Clear URL parameters
             const url = new URL(window.location.href);
             url.searchParams.delete('gameId');
             window.history.replaceState({}, document.title, url.toString());
 
-            showPhase(usernameInputPhase); // Go back to username input
-            updatePlayerIndicators(null);
+            showPhase(usernameInputPhase);
+            updateConnectedPlayersList(); // Clear player list display
             showMessage('Game reset. You can now create or join a new game!');
         }
 
         /**
          * Starts a new round of the game with the same players.
-         * Only Player 1 can initiate this.
+         * Only the host can initiate this.
          */
         async function playAgain() {
             if (!gameId) {
@@ -918,7 +1018,7 @@
                 return;
             }
 
-            if (playerRole === 'player1') {
+            if (playerRole === 'host') {
                 try {
                     // Reset game state in Firestore for the current game ID
                     await updateDoc(doc(db, `artifacts/${appId}/public/data/games`, gameId), {
@@ -927,16 +1027,44 @@
                         status: 'ready_to_create_tokens', // Go back to token creation phase
                         lastUpdated: serverTimestamp()
                     });
-                    showMessage("Starting a new round! Player 2, wait for new tokens.");
-                    // UI will update via onSnapshot listener
+                    showMessage("Starting a new round! Other players, wait for new tokens.");
                 } catch (error) {
                     console.error("Error starting new round:", error);
                     showMessage("Failed to start new round. Please try again.", true);
                 }
-            } else if (playerRole === 'player2') {
-                showMessage("Waiting for Player 1 to start a new round.", false);
+            } else if (playerRole === 'guest') {
+                showMessage("Waiting for the host to start a new round.", false);
             }
         }
+
+        /**
+         * Shares the game ID using the Web Share API if available.
+         */
+        async function shareGameId() {
+            if (navigator.share) {
+                try {
+                    await navigator.share({
+                        title: 'Join my Token Game!',
+                        text: `Join my Multiplayer Token Game! Use this Game ID: ${gameId}`,
+                        url: window.location.origin + window.location.pathname + `?gameId=${gameId}`
+                    });
+                    showMessage('Game ID shared successfully!');
+                } catch (error) {
+                    console.error('Error sharing:', error);
+                    showMessage('Failed to share Game ID.', true);
+                }
+            } else {
+                // Fallback for browsers that don't support Web Share API
+                const dummyInput = document.createElement('input');
+                document.body.appendChild(dummyInput);
+                dummyInput.value = gameId;
+                dummyInput.select();
+                document.execCommand('copy');
+                document.body.removeChild(dummyInput);
+                showMessage('Game ID copied to clipboard! Share it manually.');
+            }
+        }
+
 
         // Event Listeners
         continueBtn.addEventListener('click', handleUsernameInput);
@@ -947,12 +1075,21 @@
             }
         });
 
-        createGameBtn.addEventListener('click', createGame);
+        createGameBtn.addEventListener('click', createGame); // This now calls promptForPlayerLimit
+        confirmPlayerLimitBtn.addEventListener('click', confirmPlayerLimitAndCreateGame); // New listener for modal
+        maxPlayersInput.addEventListener('keydown', (event) => {
+            if (event.key === 'Enter') {
+                event.preventDefault();
+                confirmPlayerLimitAndCreateGame();
+            }
+        });
+
         joinGameBtn.addEventListener('click', joinGame);
         generateTokenFieldsBtn.addEventListener('click', generateTokenInputFields);
         confirmTokensBtn.addEventListener('click', confirmTokensAndStartGame);
         playAgainBtn.addEventListener('click', playAgain);
         resetGameBtn.addEventListener('click', resetGame);
+        shareGameIdBtn.addEventListener('click', shareGameId); // New share button listener
 
         numTokensInput.addEventListener('keydown', (event) => {
             if (event.key === 'Enter') {
