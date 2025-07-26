@@ -488,7 +488,6 @@
             contentInputPhase.classList.add('hidden');
             gamePhase.classList.add('hidden');
             // Hide all game-specific buttons by default
-            // Removed individual hiding of playAgainBtn and resetGameBtn, relying on hostButtonsContainer
             leaveGameBtn.classList.add('hidden');
             hostButtonsContainer.classList.add('hidden'); // Hide host buttons container
             gameOverMessage.classList.add('hidden');
@@ -807,8 +806,15 @@
                     currentShareGameId.textContent = gameId;
                     shareGameIdBtn.classList.remove('hidden');
                 } else if (gameData.status === 'waiting_for_players' && gameIsFull) {
-                    showPhase(numberInputPhase);
-                    showMessage("All players joined! Please create your tokens.");
+                    // All players joined, host can now create tokens
+                    // This is the initial transition to token creation for a new game
+                    if (tokens.length > 0) { // If tokens exist from a previous round (play again)
+                        populateTokenInputFields(tokens);
+                        showMessage("All players joined! Game ready for new round. Edit tokens or confirm.");
+                    } else { // No tokens exist, fresh game
+                        showPhase(numberInputPhase);
+                        showMessage("All players joined! Please create your tokens.");
+                    }
                     if (gameData.status !== 'ready_to_create_tokens') {
                          updateDoc(doc(db, `artifacts/${appId}/public/data/games`, gameId), {
                             status: 'ready_to_create_tokens',
@@ -816,8 +822,16 @@
                         }).catch(e => console.error("Error updating status to ready_to_create_tokens:", e));
                     }
                 }
-                else if (gameData.status === 'ready_to_create_tokens' && gameIsFull && tokens.length === 0) {
-                    showPhase(numberInputPhase);
+                else if (gameData.status === 'ready_to_create_tokens' && gameIsFull) {
+                    // This state is reached after 'Play Again' or initial game start
+                    if (tokens.length > 0) {
+                        // Pre-fill fields with existing tokens
+                        populateTokenInputFields(tokens);
+                        showMessage("Game ready for new round! Edit tokens or confirm.");
+                    } else {
+                        // No tokens exist, prompt for number of tokens
+                        showPhase(numberInputPhase);
+                    }
                 }
                 else if (gameData.status === 'tokens_created' || gameData.status === 'token_picked') {
                     showPhase(gamePhase);
@@ -942,6 +956,7 @@
 
         /**
          * Generates the specified number of input fields for token content (Host only).
+         * This function is primarily for initial token creation.
          */
         function generateTokenInputFields() {
             const num = parseInt(numTokensInput.value, 10);
@@ -965,6 +980,29 @@
             showPhase(contentInputPhase);
             showMessage(`Generated ${numberOfTokensToGenerate} token input fields.`);
         }
+
+        /**
+         * Populates the token input fields with existing token data.
+         * This is used when the host initiates a "Play Again" round.
+         * @param {Array<object>} existingTokens - The array of token objects to pre-fill.
+         */
+        function populateTokenInputFields(existingTokens) {
+            numberOfTokensToGenerate = existingTokens.length;
+            numTokensInput.value = numberOfTokensToGenerate; // Set the number input field
+            dynamicTokenInputs.innerHTML = ''; // Clear previous fields
+
+            existingTokens.forEach((token, i) => {
+                const textarea = document.createElement('textarea');
+                textarea.classList.add('input-field', 'token-text-input', 'handwriting-font');
+                textarea.placeholder = `Enter text for Token ${i + 1}`;
+                textarea.id = `tokenText_${i}`;
+                textarea.value = token.content; // Pre-fill with existing content
+                dynamicTokenInputs.appendChild(textarea);
+            });
+
+            showPhase(contentInputPhase); // Show the content input phase
+        }
+
 
         /**
          * Collects text from dynamic input fields and updates Firestore (Host only).
@@ -1160,9 +1198,16 @@
                     // Reset pickedTokenId for all players for the new round
                     const resetPlayers = players.map(p => ({ ...p, pickedTokenId: null }));
 
+                    // Reset 'revealed' and 'pickedBy' for all tokens, but keep content
+                    const resetTokens = tokens.map(token => ({
+                        ...token,
+                        revealed: false,
+                        pickedBy: null
+                    }));
+
                     // Reset game state in Firestore for the current game ID
                     await updateDoc(doc(db, `artifacts/${appId}/public/data/games`, gameId), {
-                        tokens: [],
+                        tokens: resetTokens, // Use resetTokens to keep content
                         revealedToken: null,
                         revealedByPlayerName: null,
                         players: resetPlayers, // Update players with reset pickedTokenId
