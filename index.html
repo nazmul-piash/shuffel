@@ -150,37 +150,59 @@
             background-color: #c7d2fe;
             box-shadow: 0 4px 10px rgba(79, 70, 229, 0.2);
         }
-        .token-pile {
+        .token-card-display {
             background-color: #a5b4fc; /* Slightly darker indigo for folded state */
             color: #ffffff;
-            font-size: 2.5rem; /* Larger font for count */
+            font-size: 1.25rem; /* Larger font for '?' */
             font-weight: 700;
-            width: 120px;
-            height: 120px;
-            border-radius: 1.5rem; /* More rounded */
+            width: 100px; /* Fixed width for consistent cards */
+            height: 100px; /* Fixed height for consistent cards */
+            border-radius: 0.75rem;
             display: flex;
             align-items: center;
             justify-content: center;
-            margin: 2rem auto; /* Center the pile */
-            box-shadow: 0 8px 20px rgba(79, 70, 229, 0.3);
+            margin: 0.5rem;
+            box-shadow: 0 4px 10px rgba(79, 70, 229, 0.2);
             transition: all 0.3s ease-in-out;
-            cursor: pointer; /* Indicate it's clickable for Player 2 */
+            cursor: pointer;
+            flex-shrink: 0; /* Prevent shrinking in flex container */
+            position: relative; /* For overlay */
         }
-        .token-pile:hover {
+        .token-card-display:hover:not(.revealed):not(.picked) {
             transform: translateY(-5px);
-            box-shadow: 0 12px 25px rgba(79, 70, 229, 0.4);
+            box-shadow: 0 8px 15px rgba(79, 70, 229, 0.3);
         }
-        .token-pile.empty {
-            background-color: #e2e8f0; /* Light gray when empty */
-            color: #94a3b8;
-            box-shadow: none;
+        .token-card-display.revealed {
+            background-color: #d1fae5; /* Light green for revealed */
+            color: #065f46;
             cursor: default;
+            box-shadow: 0 4px 10px rgba(52, 211, 153, 0.3);
+            border: 2px solid #34d399;
+        }
+        .token-card-display.picked {
+            background-color: #fca5a5; /* Light red for picked by other */
+            color: #991b1b;
+            cursor: default;
+            box-shadow: 0 4px 10px rgba(239, 68, 68, 0.3);
+            border: 2px solid #ef4444;
+        }
+        .token-card-display.disabled {
+            opacity: 0.7;
+            cursor: default;
+            pointer-events: none; /* Disable clicks */
         }
         .game-over-message {
             color: #ef4444; /* Red for game over */
             font-size: 1.8rem;
             font-weight: 700;
             margin-top: 1.5rem;
+        }
+        .token-content-text {
+            font-family: 'Caveat', cursive;
+            font-size: 1.2rem;
+            padding: 0.5rem;
+            word-break: break-all;
+            text-align: center;
         }
     </style>
 </head>
@@ -239,12 +261,10 @@
         <div id="game-phase" class="w-full hidden">
             <p class="text-lg text-gray-600 mb-6" id="gamePhaseMessage">Player 2: Pick a token!</p>
 
-            <!-- Visual Token Pile -->
-            <div id="tokenPile" class="token-pile" title="Click to pick a token">
-                <span id="tokenCount">0</span>
+            <!-- Display area for individual tokens -->
+            <div id="tokenDisplayArea" class="flex flex-wrap justify-center gap-4 mb-6">
+                <!-- Token cards will be rendered here -->
             </div>
-
-            <button id="pickTokenBtn" class="btn-primary w-full mb-6">Pick a Token Randomly</button>
 
             <div id="revealedTokenContainer" class="message-box hidden">
                 <p class="text-xl font-bold mb-2">You got:</p>
@@ -288,8 +308,9 @@
         let unsubscribeFromGame = null; // To store the Firestore snapshot listener unsubscribe function
 
         // Game state variables
-        let tokens = []; // Array to store the tokens
-        let revealedToken = null;
+        // Tokens will now be objects: { id: string, content: string, revealed: boolean, pickedBy: string|null }
+        let tokens = [];
+        let revealedToken = null; // Content of the last revealed token
         let numberOfTokensToGenerate = 0;
         let playerRole = null; // 'player1' or 'player2'
         let player1Id = null; // Store player1's actual ID
@@ -316,12 +337,11 @@
         const dynamicTokenInputs = document.getElementById('dynamicTokenInputs');
         const gamePhase = document.getElementById('game-phase');
         const gamePhaseMessage = document.getElementById('gamePhaseMessage');
-        const tokenPile = document.getElementById('tokenPile'); // New element for token pile
-        const tokenCountDisplay = document.getElementById('tokenCount'); // Span inside token pile
-        const pickTokenBtn = document.getElementById('pickTokenBtn');
+        const tokenDisplayArea = document.getElementById('tokenDisplayArea'); // New area for individual tokens
+        const pickTokenBtn = document.getElementById('pickTokenBtn'); // This button is now hidden, picking is by clicking cards
         const revealedTokenContainer = document.getElementById('revealedTokenContainer');
         const revealedTokenContent = document.getElementById('revealedTokenContent');
-        const gameOverMessage = document.getElementById('gameOverMessage'); // New element for game over
+        const gameOverMessage = document.getElementById('gameOverMessage');
         const resetGameBtn = document.getElementById('resetGameBtn');
         const messageBox = document.getElementById('messageBox');
 
@@ -364,10 +384,8 @@
             player1Indicator.classList.remove('active');
             player2Indicator.classList.remove('active');
 
-            // Update display to show full User ID
             player1Indicator.textContent = player1Id ? `Player 1 (${player1Id.substring(0, 4)}...)` : 'Player 1';
             player2Indicator.textContent = player2Id ? `Player 2 (${player2Id.substring(0, 4)}...)` : 'Player 2';
-
 
             if (activePlayerRole === 'player1') {
                 player1Indicator.classList.add('active');
@@ -386,9 +404,8 @@
                 auth = getAuth(app);
 
                 // IMPORTANT: If you are seeing "auth/configuration-not-found" error,
-                // it means Firebase Authentication is not enabled in your project.
-                // Go to Firebase Console -> Authentication -> Get started, and enable
-                // the "Anonymous" provider for this game to work.
+                // it means Firebase Authentication (Anonymous provider) is not enabled in your project.
+                // Go to Firebase Console -> Authentication -> Get started, and enable the "Anonymous" provider.
                 if (initialAuthToken) {
                     await signInWithCustomToken(auth, initialAuthToken);
                 } else {
@@ -400,21 +417,20 @@
                         userId = user.uid;
                         userIdDisplay.textContent = userId;
                         console.log("Authenticated with user ID:", userId);
-                        // Check URL for gameId to auto-join
                         const urlParams = new URLSearchParams(window.location.search);
                         const urlGameId = urlParams.get('gameId');
                         if (urlGameId) {
                             gameIdInput.value = urlGameId;
-                            joinGame(); // Attempt to auto-join
+                            joinGame();
                         } else {
-                            showPhase(initialPhase); // Show initial options if no gameId in URL
-                            updatePlayerIndicators(null); // No active player yet
+                            showPhase(initialPhase);
+                            updatePlayerIndicators(null);
                         }
                     } else {
                         userIdDisplay.textContent = 'Not Authenticated';
                         console.log("No user is signed in.");
-                        showPhase(initialPhase); // Show initial options if no user
-                        updatePlayerIndicators(null); // No active player yet
+                        showPhase(initialPhase);
+                        updatePlayerIndicators(null);
                     }
                 });
             } catch (error) {
@@ -435,37 +451,36 @@
             try {
                 showPhase(waitingPhase);
                 waitingMessage.textContent = "Creating game...";
-                inviteLinkContainer.classList.add('hidden'); // Hide link until created
+                inviteLinkContainer.classList.add('hidden');
 
                 const gamesCollectionRef = collection(db, `artifacts/${appId}/public/data/games`);
-                const newGameRef = doc(gamesCollectionRef); // Firestore generates unique ID
+                const newGameRef = doc(gamesCollectionRef);
                 gameId = newGameRef.id;
 
                 await setDoc(newGameRef, {
                     player1Id: userId,
                     player2Id: null,
                     status: 'waiting_for_player2',
-                    tokens: [],
+                    tokens: [], // Initialize with empty tokens
                     revealedToken: null,
                     createdAt: serverTimestamp(),
                     lastUpdated: serverTimestamp()
                 });
 
                 playerRole = 'player1';
-                player1Id = userId; // Set player1Id locally
+                player1Id = userId;
                 const currentUrl = window.location.origin + window.location.pathname;
                 inviteLink.value = `${currentUrl}?gameId=${gameId}`;
                 inviteLinkContainer.classList.remove('hidden');
                 waitingMessage.textContent = `Game created! Share this link with Player 2. Your Game ID: ${gameId}`;
                 showMessage("Game created successfully!");
 
-                // Start listening for game state changes
                 listenToGameChanges();
 
             } catch (error) {
                 console.error("Error creating game:", error);
                 showMessage("Failed to create game. Please try again.", true);
-                showPhase(initialPhase); // Go back to initial phase on error
+                showPhase(initialPhase);
             }
         }
 
@@ -487,7 +502,7 @@
             try {
                 showPhase(waitingPhase);
                 waitingMessage.textContent = "Joining game...";
-                inviteLinkContainer.classList.add('hidden'); // Hide link
+                inviteLinkContainer.classList.add('hidden');
 
                 const gameRef = doc(db, `artifacts/${appId}/public/data/games`, inputGameId);
                 const gameSnap = await getDoc(gameRef);
@@ -501,11 +516,10 @@
                 const gameData = gameSnap.data();
 
                 if (gameData.player1Id === userId || gameData.player2Id === userId) {
-                    // Already part of this game
                     gameId = inputGameId;
                     playerRole = (gameData.player1Id === userId) ? 'player1' : 'player2';
                     player1Id = gameData.player1Id;
-                    player2Id = gameData.player2Id; // Will be null if not yet joined
+                    player2Id = gameData.player2Id;
                     showMessage(`Rejoined game ${gameId} as ${playerRole}.`);
                     listenToGameChanges();
                     return;
@@ -517,7 +531,6 @@
                     return;
                 }
 
-                // If player2Id is null, this user can join as player2
                 await updateDoc(gameRef, {
                     player2Id: userId,
                     status: 'ready_to_create_tokens',
@@ -526,18 +539,17 @@
 
                 gameId = inputGameId;
                 playerRole = 'player2';
-                player1Id = gameData.player1Id; // Get player1Id from existing game data
-                player2Id = userId; // Set player2Id locally
+                player1Id = gameData.player1Id;
+                player2Id = userId;
                 waitingMessage.textContent = `Joined game ${gameId}! Waiting for Player 1 to create tokens...`;
                 showMessage("Successfully joined game!");
 
-                // Start listening for game state changes
                 listenToGameChanges();
 
             } catch (error) {
                 console.error("Error joining game:", error);
                 showMessage("Failed to join game. Please try again.", true);
-                showPhase(initialPhase); // Go back to initial phase on error
+                showPhase(initialPhase);
             }
         }
 
@@ -546,7 +558,7 @@
          */
         function listenToGameChanges() {
             if (unsubscribeFromGame) {
-                unsubscribeFromGame(); // Unsubscribe from previous listener if any
+                unsubscribeFromGame();
             }
 
             if (!gameId) {
@@ -558,14 +570,13 @@
             unsubscribeFromGame = onSnapshot(gameRef, (docSnap) => {
                 if (docSnap.exists()) {
                     const gameData = docSnap.data();
-                    // Update local player IDs from game data
                     player1Id = gameData.player1Id;
                     player2Id = gameData.player2Id;
                     console.log("Game state updated:", gameData);
                     updateUIBasedOnGameState(gameData);
                 } else {
                     showMessage("Game ended or deleted. Resetting...", true);
-                    resetGame(); // Game might have been deleted by other player
+                    resetGame();
                 }
             }, (error) => {
                 console.error("Error listening to game changes:", error);
@@ -579,25 +590,20 @@
          */
         function updateUIBasedOnGameState(gameData) {
             tokens = gameData.tokens || [];
-            revealedToken = gameData.revealedToken;
+            revealedToken = gameData.revealedToken; // This will be the content of the last picked token
 
-            // Update token pile display
-            tokenCountDisplay.textContent = tokens.length;
-            if (tokens.length === 0) {
-                tokenPile.classList.add('empty');
-                tokenPile.style.cursor = 'default';
-            } else {
-                tokenPile.classList.remove('empty');
-                tokenPile.style.cursor = 'pointer';
-            }
+            // Update player indicators based on current player IDs
+            updatePlayerIndicators(playerRole);
 
-            // Hide game over message by default, show only when game ends
+            // Hide game over message by default
             gameOverMessage.classList.add('hidden');
+            revealedTokenContainer.classList.add('hidden'); // Hide revealed token by default
+
+            // Render individual token cards
+            renderTokenCards(tokens);
 
             // Player 1's flow
             if (playerRole === 'player1') {
-                updatePlayerIndicators('player1'); // Player 1 is active
-
                 if (gameData.status === 'waiting_for_player2' && !gameData.player2Id) {
                     showPhase(waitingPhase);
                     waitingMessage.textContent = `Game created! Share this link with Player 2. Your Game ID: ${gameId}`;
@@ -606,45 +612,91 @@
                     showPhase(numberInputPhase);
                     showMessage("Player 2 has joined! Please create your tokens.");
                 } else if (gameData.status === 'tokens_created' || gameData.status === 'token_picked') {
-                    // Player 1 sees the game is ready for picking by Player 2
                     showPhase(gamePhase);
-                    gamePhaseMessage.textContent = "Player 2's Turn: Pick a token!";
+                    gamePhaseMessage.textContent = "Player 2's Turn: Waiting for a pick...";
                     pickTokenBtn.classList.add('hidden'); // Player 1 doesn't pick
-                    revealedTokenContainer.classList.toggle('hidden', !revealedToken);
-                    revealedTokenContent.textContent = revealedToken || '';
 
-                    if (tokens.length === 0) {
+                    const allTokensRevealed = tokens.every(token => token.revealed);
+                    if (allTokensRevealed && tokens.length > 0) {
                         gameOverMessage.classList.remove('hidden');
                         gamePhaseMessage.textContent = "Game Over!";
+                    } else if (revealedToken) {
+                        revealedTokenContainer.classList.remove('hidden');
+                        revealedTokenContent.textContent = revealedToken;
                     }
                 }
             }
             // Player 2's flow
             else if (playerRole === 'player2') {
-                updatePlayerIndicators('player2'); // Player 2 is active
-
                 if (gameData.status === 'waiting_for_player2' || gameData.status === 'ready_to_create_tokens') {
                     showPhase(waitingPhase);
                     waitingMessage.textContent = `Joined game ${gameId}! Waiting for Player 1 to create tokens...`;
-                    inviteLinkContainer.classList.add('hidden'); // Player 2 doesn't need invite link
+                    inviteLinkContainer.classList.add('hidden');
                 } else if (gameData.status === 'tokens_created' || gameData.status === 'token_picked') {
                     showPhase(gamePhase);
                     gamePhaseMessage.textContent = "Your Turn: Pick a token!";
-                    pickTokenBtn.classList.remove('hidden'); // Player 2 can pick
-                    revealedTokenContainer.classList.toggle('hidden', !revealedToken);
-                    revealedTokenContent.textContent = revealedToken || '';
+                    pickTokenBtn.classList.add('hidden'); // Picking is by clicking cards
 
-                    if (tokens.length === 0) {
-                        pickTokenBtn.disabled = true;
+                    const allTokensRevealed = tokens.every(token => token.revealed);
+                    if (allTokensRevealed && tokens.length > 0) {
                         gameOverMessage.classList.remove('hidden');
-                        gamePhaseMessage.textContent = "Game Over!";
+                        gamePhaseMessage.textContent = "Game Over! All tokens picked.";
                         showMessage('All tokens picked! Reset to play again.', false);
-                    } else {
-                        pickTokenBtn.disabled = false; // Re-enable for next pick
+                    } else if (revealedToken) {
+                        revealedTokenContainer.classList.remove('hidden');
+                        revealedTokenContent.textContent = revealedToken;
                     }
                 }
             }
         }
+
+        /**
+         * Renders the individual token cards in the display area.
+         * @param {Array<object>} currentTokens - The array of token objects from Firestore.
+         */
+        function renderTokenCards(currentTokens) {
+            tokenDisplayArea.innerHTML = ''; // Clear existing cards
+
+            if (!currentTokens || currentTokens.length === 0) {
+                tokenDisplayArea.innerHTML = '<p class="text-gray-500">No tokens created yet.</p>';
+                return;
+            }
+
+            currentTokens.forEach(token => {
+                const card = document.createElement('div');
+                card.classList.add('token-card-display');
+                card.dataset.tokenId = token.id; // Store token ID for easy lookup
+
+                const contentSpan = document.createElement('span');
+                contentSpan.classList.add('token-content-text');
+
+                if (token.revealed) {
+                    card.classList.add('revealed');
+                    contentSpan.textContent = token.content;
+                    card.classList.add('disabled'); // Disable revealed cards
+                } else {
+                    contentSpan.textContent = '?'; // Hidden content
+                    if (playerRole === 'player2') {
+                        // Only Player 2 can click unrevealed tokens
+                        card.addEventListener('click', () => pickSpecificToken(token.id));
+                    } else {
+                        // Player 1 cannot click, so disable interaction
+                        card.classList.add('disabled');
+                    }
+                }
+
+                // If a token was picked by someone else (Player 1 seeing Player 2's pick)
+                if (token.pickedBy && token.pickedBy !== userId && !token.revealed) {
+                    card.classList.add('picked'); // Style to show it was picked by other player
+                    contentSpan.textContent = 'Picked!'; // Indicate it was picked
+                    card.classList.add('disabled'); // Disable picked cards
+                }
+
+                card.appendChild(contentSpan);
+                tokenDisplayArea.appendChild(card);
+            });
+        }
+
 
         /**
          * Generates the specified number of input fields for token content (Player 1).
@@ -687,10 +739,16 @@
             for (let i = 0; i < numberOfTokensToGenerate; i++) {
                 const textarea = document.getElementById(`tokenText_${i}`);
                 if (textarea && textarea.value.trim() !== '') {
-                    newTokens.push(textarea.value.trim());
+                    // Assign a unique ID to each token object
+                    newTokens.push({
+                        id: `token-${Date.now()}-${i}`, // Simple unique ID
+                        content: textarea.value.trim(),
+                        revealed: false,
+                        pickedBy: null // Track who picked it, if anyone
+                    });
                 } else {
                     allFieldsFilled = false;
-                    break; // Stop if any field is empty
+                    break;
                 }
             }
 
@@ -704,6 +762,12 @@
                 return;
             }
 
+            // Shuffle tokens before saving to Firestore
+            for (let i = newTokens.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [newTokens[i], newTokens[j]] = [newTokens[j], newTokens[i]];
+            }
+
             tokens = newTokens; // Update local tokens array
 
             try {
@@ -711,11 +775,10 @@
                 await updateDoc(gameRef, {
                     tokens: tokens,
                     status: 'tokens_created',
-                    revealedToken: null, // Reset revealed token for new game
+                    revealedToken: null,
                     lastUpdated: serverTimestamp()
                 });
                 showMessage('Tokens confirmed and saved! Player 2 can now pick.');
-                // UI will be updated by the onSnapshot listener
             } catch (error) {
                 console.error("Error confirming tokens:", error);
                 showMessage("Failed to save tokens. Please try again.", true);
@@ -723,42 +786,39 @@
         }
 
         /**
-         * Randomly picks and reveals one token (Player 2).
+         * Player 2 picks a specific token by its ID.
+         * @param {string} tokenId - The ID of the token to pick.
          */
-        async function pickToken() {
+        async function pickSpecificToken(tokenId) {
             if (!gameId || playerRole !== 'player2') {
                 showMessage("You are not Player 2 or not in a game.", true);
                 return;
             }
 
-            if (tokens.length === 0) {
-                showMessage('No tokens left to pick! Please reset the game.', true);
+            const tokenIndex = tokens.findIndex(t => t.id === tokenId);
+            if (tokenIndex === -1) {
+                showMessage('Selected token not found.', true);
                 return;
             }
 
-            // Shuffle locally for randomness before picking
-            const shuffledTokens = [...tokens]; // Create a copy to shuffle
-            for (let i = shuffledTokens.length - 1; i > 0; i--) {
-                const j = Math.floor(Math.random() * (i + 1));
-                [shuffledTokens[i], shuffledTokens[j]] = [shuffledTokens[j], shuffledTokens[i]];
+            if (tokens[tokenIndex].revealed) {
+                showMessage('This token has already been revealed.', true);
+                return;
             }
 
-            const randomIndex = Math.floor(Math.random() * shuffledTokens.length);
-            const pickedTokenContent = shuffledTokens[randomIndex];
-
-            // Remove the picked token from the local array
-            const updatedTokens = tokens.filter(token => token !== pickedTokenContent);
+            const updatedTokens = [...tokens];
+            updatedTokens[tokenIndex].revealed = true;
+            updatedTokens[tokenIndex].pickedBy = userId; // Mark who picked it
 
             try {
                 const gameRef = doc(db, `artifacts/${appId}/public/data/games`, gameId);
                 await updateDoc(gameRef, {
-                    tokens: updatedTokens, // Update remaining tokens
-                    revealedToken: pickedTokenContent,
-                    status: 'token_picked', // Keep status as token_picked for continuous picking
+                    tokens: updatedTokens,
+                    revealedToken: updatedTokens[tokenIndex].content, // Content of the specific picked token
+                    status: 'token_picked',
                     lastUpdated: serverTimestamp()
                 });
-                showMessage('Token picked!');
-                // UI will be updated by the onSnapshot listener
+                showMessage('Token picked and revealed!');
             } catch (error) {
                 console.error("Error picking token:", error);
                 showMessage("Failed to pick token. Please try again.", true);
@@ -770,16 +830,23 @@
          */
         async function resetGame() {
             if (unsubscribeFromGame) {
-                unsubscribeFromGame(); // Stop listening to game changes
+                unsubscribeFromGame();
             }
 
             if (gameId && playerRole === 'player1') {
                 try {
                     // Only Player 1 should delete the game document
-                    await setDoc(doc(db, `artifacts/${appId}/public/data/games`, gameId), {}, { merge: false }); // Clear document
-                    console.log("Game document cleared by Player 1.");
+                    await setDoc(doc(db, `artifacts/${appId}/public/data/games`, gameId), {
+                        player1Id: player1Id, // Keep player1Id for next game if they stay
+                        player2Id: null,
+                        status: 'waiting_for_player2',
+                        tokens: [],
+                        revealedToken: null,
+                        lastUpdated: serverTimestamp()
+                    });
+                    console.log("Game document reset by Player 1.");
                 } catch (error) {
-                    console.error("Error clearing game document:", error);
+                    console.error("Error resetting game document:", error);
                 }
             }
 
@@ -790,12 +857,10 @@
             player1Id = null;
             player2Id = null;
             gameId = null;
-            numTokensInput.value = 4; // Reset to default value
-            dynamicTokenInputs.innerHTML = ''; // Clear dynamic fields
+            numTokensInput.value = 4;
+            dynamicTokenInputs.innerHTML = '';
             revealedTokenContainer.classList.add('hidden');
-            pickTokenBtn.disabled = false;
-            gameIdInput.value = ''; // Clear game ID input
-            gameOverMessage.classList.add('hidden'); // Hide game over message
+            gameOverMessage.classList.add('hidden');
 
             // Clear URL parameters
             const url = new URL(window.location.href);
@@ -803,7 +868,7 @@
             window.history.replaceState({}, document.title, url.toString());
 
             showPhase(initialPhase);
-            updatePlayerIndicators(null); // Reset indicators
+            updatePlayerIndicators(null);
             showMessage('Game reset. You can now create or join a new game!');
         }
 
@@ -812,7 +877,7 @@
          */
         function copyInviteLink() {
             inviteLink.select();
-            document.execCommand('copy'); // Fallback for navigator.clipboard.writeText() in iframes
+            document.execCommand('copy');
             showMessage('Invite link copied to clipboard!');
         }
 
@@ -821,36 +886,24 @@
         joinGameBtn.addEventListener('click', joinGame);
         generateTokenFieldsBtn.addEventListener('click', generateTokenInputFields);
         confirmTokensBtn.addEventListener('click', confirmTokensAndStartGame);
-        pickTokenBtn.addEventListener('click', pickToken);
-        tokenPile.addEventListener('click', () => { // Allow clicking the pile to pick
-            if (playerRole === 'player2' && tokens.length > 0) {
-                pickToken();
-            } else if (playerRole === 'player2' && tokens.length === 0) {
-                showMessage('No tokens left to pick! Reset the game to play again.', true);
-            } else if (playerRole === 'player1') {
-                showMessage('You are Player 1. Player 2 picks the tokens.', false);
-            }
-        });
+        // pickTokenBtn is now hidden, picking is via clicking cards
         resetGameBtn.addEventListener('click', resetGame);
         copyLinkBtn.addEventListener('click', copyInviteLink);
 
-        // Allow pressing Enter in the number input to generate fields
         numTokensInput.addEventListener('keydown', (event) => {
             if (event.key === 'Enter') {
                 event.preventDefault();
-                generateTokenFieldsBtn.click(); // Simulate button click
+                generateTokenFieldsBtn.click();
             }
         });
 
-        // Allow pressing Enter in the game ID input to join
         gameIdInput.addEventListener('keydown', (event) => {
             if (event.key === 'Enter') {
                 event.preventDefault();
-                joinGameBtn.click(); // Simulate button click
+                joinGameBtn.click();
             }
         });
 
-        // Initialize Firebase on window load
         window.onload = initializeFirebase;
 
     </script>
